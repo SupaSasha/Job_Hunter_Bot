@@ -15,6 +15,9 @@ class JobDTO(BaseModel):
     description: str | None = None
     url: str
     location: str | None = None
+    timezone_text: str | None = None
+    timezone_min_utc_offset: int | None = None
+    timezone_max_utc_offset: int | None = None
     remote: bool = False
     remote_regions: list[str] = Field(default_factory=list)
     employment_type: str | None = None
