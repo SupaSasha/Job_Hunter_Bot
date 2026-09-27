@@ -117,7 +117,7 @@ async def test_get_updates_validates_response(result) -> None:
             await client.get_updates()
 
 
-@pytest.mark.parametrize("text", [None, "Вакансия сохранена"])
+@pytest.mark.parametrize("text", [None, "Job saved"])
 async def test_answer_callback_query(text) -> None:
     def handler(request):
         expected = {"callback_query_id": "query-1"}

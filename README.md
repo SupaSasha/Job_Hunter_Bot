@@ -3,6 +3,8 @@
 FastAPI foundation, Remote OK collection and a Telegram daily job digest.
 PostgreSQL and Redis run in Docker; Python processes run locally through Poetry.
 
+All application messages, source comments, documentation and tests are written in English.
+
 ## Development
 
 Install dependencies with `poetry install`. On a fresh checkout copy
@@ -240,7 +242,7 @@ effective defaults, then restore it; no need to wait seven days.
 
 ## Feedback
 
-Job cards keep `Сохранить` and `Не подходит` buttons, handled by the independent
+Job cards keep `Save` and `Not suitable` buttons, handled by the independent
 polling process. Callback data is `save:<job_id>` or `reject:<job_id>`.
 The handler checks the Telegram sender against an active persisted user, stores
 `saved`/`rejected` feedback and answers the callback. Unknown users are not

@@ -32,13 +32,13 @@ def _truncate(value: str, limit: int) -> str:
 
 def _salary(job: JobDTO) -> str:
     if job.salary_min is None and job.salary_max is None:
-        return "Зарплата не указана"
+        return "Salary not specified"
     if job.salary_min is not None and job.salary_max is not None:
         amount = f"{job.salary_min:,}–{job.salary_max:,}"
     elif job.salary_min is not None:
-        amount = f"от {job.salary_min:,}"
+        amount = f"From {job.salary_min:,}"
     else:
-        amount = f"до {job.salary_max:,}"
+        amount = f"Up to {job.salary_max:,}"
     currency = f" {job.currency}" if job.currency else ""
     period = (
         f" / {_PERIODS.get(job.salary_period, job.salary_period)}"
@@ -50,29 +50,29 @@ def _salary(job: JobDTO) -> str:
 
 def format_job_message(job: JobDTO, score: ScoreResult) -> str:
     regions = ", ".join(_REGIONS.get(r, r) for r in job.remote_regions)
-    location = regions or job.location or "Регион не указан"
+    location = regions or job.location or "Region not specified"
     if job.remote:
         location = f"Remote · {location}"
     employment = _EMPLOYMENT.get(
-        job.employment_type, job.employment_type or "Занятость не указана"
+        job.employment_type, job.employment_type or "Employment type not specified"
     )
     technologies = (
         "\n".join(_TECHNOLOGIES.get(t, t) for t in job.technologies)
-        or "Технологии не указаны"
+        or "Technologies not specified"
     )
     sections = [
         f"🔥 Match: {score.score}%",
         f"{_truncate(job.title, 240)}\n"
-        f"{_truncate(job.company or 'Компания не указана', 160)}",
+        f"{_truncate(job.company or 'Company not specified', 160)}",
         f"💰 {_salary(job)}\n🌎 {_truncate(location, 300)}\n🕐 {employment}",
         _truncate(technologies, 600),
-        f"Опыт: {job.experience_level or 'не указан'}\n"
-        f"Источник: {'Remote OK' if job.source == 'remoteok' else job.source}",
+        f"Experience: {job.experience_level or 'not specified'}\n"
+        f"Source: {'Remote OK' if job.source == 'remoteok' else job.source}",
     ]
     for title, items, icon in (
-        ("Совпадения", score.matched_rules, "✅"),
-        ("Штрафы", score.penalties, "⚠️"),
-        ("Предупреждения", score.warnings, "⚠️"),
+        ("Matches", score.matched_rules, "✅"),
+        ("Penalties", score.penalties, "⚠️"),
+        ("Warnings", score.warnings, "⚠️"),
     ):
         entries = [item for item in items if item.strip()]
         if entries:
@@ -89,10 +89,10 @@ def build_job_keyboard(job_id: int, url: str) -> dict:
         raise ValueError("Job ID does not fit Telegram callback_data")
     return {
         "inline_keyboard": [
-            [{"text": "Открыть вакансию", "url": url}],
+            [{"text": "View job", "url": url}],
             [
-                {"text": "Сохранить", "callback_data": callbacks[0]},
-                {"text": "Не подходит", "callback_data": callbacks[1]},
+                {"text": "Save", "callback_data": callbacks[0]},
+                {"text": "Not suitable", "callback_data": callbacks[1]},
             ],
         ]
     }

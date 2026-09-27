@@ -78,8 +78,8 @@ def callback(data="save:42"):
 @pytest.mark.parametrize(
     ("data", "feedback_type", "text"),
     [
-        ("save:42", "saved", "Вакансия сохранена"),
-        ("reject:42", "rejected", "Отмечено как не подходящее"),
+        ("save:42", "saved", "Job saved"),
+        ("reject:42", "rejected", "Marked as not suitable"),
     ],
 )
 async def test_successful_callback(handler, data, feedback_type, text, caplog):

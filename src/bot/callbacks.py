@@ -98,8 +98,6 @@ class CallbackHandler:
             action.feedback_type,
         )
         text = (
-            "Вакансия сохранена"
-            if action.feedback_type == "saved"
-            else "Отмечено как не подходящее"
+            "Job saved" if action.feedback_type == "saved" else "Marked as not suitable"
         )
         await self._answer(callback_id, text)

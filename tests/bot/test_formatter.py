@@ -44,13 +44,13 @@ def test_formatter_includes_fields_and_explanations(job: JobDTO) -> None:
         "FastAPI",
         "PostgreSQL",
         "Docker",
-        "Опыт: middle",
-        "Источник: Remote OK",
-        "Совпадения:",
+        "Experience: middle",
+        "Source: Remote OK",
+        "Matches:",
         "✅ Python: +10",
-        "Штрафы:",
+        "Penalties:",
         "⚠️ Senior level: -5",
-        "Предупреждения:",
+        "Warnings:",
         "⚠️ Timezone is not specified",
     ):
         assert value in message
@@ -59,14 +59,14 @@ def test_formatter_includes_fields_and_explanations(job: JobDTO) -> None:
 def test_unknown_salary_and_empty_sections(job: JobDTO) -> None:
     job.salary_min = job.salary_max = None
     message = format_job_message(job, ScoreResult(score=70, matched_rules=[" "]))
-    assert "Зарплата не указана" in message
-    for heading in ("Совпадения:", "Штрафы:", "Предупреждения:"):
+    assert "Salary not specified" in message
+    for heading in ("Matches:", "Penalties:", "Warnings:"):
         assert heading not in message
 
 
 @pytest.mark.parametrize(
     ("minimum", "maximum", "expected"),
-    [(0, None, "от 0"), (None, 4000, "до 4,000")],
+    [(0, None, "From 0"), (None, 4000, "Up to 4,000")],
 )
 def test_partial_salary(
     job: JobDTO, minimum: int | None, maximum: int | None, expected: str
@@ -90,12 +90,10 @@ def test_long_unicode_message_fits_telegram(job: JobDTO) -> None:
 
 def test_keyboard_uses_small_callbacks_and_url() -> None:
     keyboard = build_job_keyboard(42, "https://example.com/42")["inline_keyboard"]
-    assert keyboard[0] == [
-        {"text": "Открыть вакансию", "url": "https://example.com/42"}
-    ]
+    assert keyboard[0] == [{"text": "View job", "url": "https://example.com/42"}]
     assert keyboard[1] == [
-        {"text": "Сохранить", "callback_data": "save:42"},
-        {"text": "Не подходит", "callback_data": "reject:42"},
+        {"text": "Save", "callback_data": "save:42"},
+        {"text": "Not suitable", "callback_data": "reject:42"},
     ]
     assert all(len(button["callback_data"].encode()) <= 64 for button in keyboard[1])
 
