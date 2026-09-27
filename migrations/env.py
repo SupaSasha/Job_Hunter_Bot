@@ -6,9 +6,9 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
+import src.models  # noqa: F401 -- register all ORM metadata
 from src.config import settings
 from src.db.base import Base
-from src.models import JobORM  # noqa: F401 -- register ORM metadata
 
 config = context.config
 if config.config_file_name is not None:
