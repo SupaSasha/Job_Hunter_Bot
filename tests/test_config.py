@@ -53,3 +53,30 @@ def test_token_is_not_in_repr_and_big_chat_id_is_supported(settings_class) -> No
 def test_invalid_score_or_limit(settings_class, overrides) -> None:
     with pytest.raises(ValidationError):
         settings_class(_env_file=None, **overrides)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"REDIS_PORT": 0},
+        {"REDIS_DB": -1},
+        {"TRIAL_DAYS": 0},
+        {"FREE_MIN_SCORE": 101},
+        {"FREE_MAX_JOBS_PER_DIGEST": -1},
+        {"SCHEDULER_TIMEZONE": "GMT-3"},
+        {"FREE_DIGEST_TIME": "09:00+03:00"},
+    ],
+)
+def test_invalid_scheduler_settings(settings_class, overrides):
+    with pytest.raises(ValidationError):
+        settings_class(_env_file=None, **overrides)
+
+
+def test_scheduler_settings_defaults_and_redis_url(settings_class):
+    from datetime import time
+
+    config = settings_class(_env_file=None)
+    assert config.REDIS_URL == "redis://localhost:6379/0"
+    assert config.FREE_DIGEST_TIME == time(9)
+    assert config.SCHEDULER_TIMEZONE == "America/Montevideo"
+    assert config.TRIAL_DAYS == 7

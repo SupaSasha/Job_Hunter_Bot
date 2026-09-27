@@ -14,6 +14,10 @@ from src.schemas.job import JobDTO
 logger = logging.getLogger(__name__)
 
 
+class CollectionError(RuntimeError):
+    """Source unavailable or returned an invalid response."""
+
+
 class RemoteOKCollector(BaseJobCollector):
     """Collect jobs from the public Remote OK JSON API."""
 
@@ -37,22 +41,22 @@ class RemoteOKCollector(BaseJobCollector):
                         self.source_name,
                         retry_after,
                     )
-                    return []
+                    raise CollectionError("Remote OK rate limited")
                 response.raise_for_status()
                 payload = response.json()
         except httpx.TimeoutException as exc:
             logger.error("[%s] request timeout: %s", self.source_name, exc)
-            return []
+            raise CollectionError("Remote OK collection failed")
         except httpx.HTTPError as exc:
             logger.error(
                 "[%s] HTTP error while fetching jobs: %s",
                 self.source_name,
                 exc,
             )
-            return []
+            raise CollectionError("Remote OK collection failed")
         except (json.JSONDecodeError, ValueError) as exc:
             logger.error("[%s] invalid JSON response: %s", self.source_name, exc)
-            return []
+            raise CollectionError("Remote OK collection failed")
 
         if not isinstance(payload, list):
             logger.error(
@@ -60,7 +64,7 @@ class RemoteOKCollector(BaseJobCollector):
                 self.source_name,
                 type(payload).__name__,
             )
-            return []
+            raise CollectionError("Remote OK collection failed")
 
         jobs: list[JobDTO] = []
         for item in payload:

@@ -7,6 +7,7 @@ from src.bot.polling import poll_updates
 from src.config import settings
 from src.db.database import async_session_factory, engine
 from src.repositories.jobs import JobRepository
+from src.repositories.scheduling import DeliveryBootstrap
 from src.repositories.users import UserRepository
 from src.services.feedback import FeedbackService
 from src.services.users import OwnerService
@@ -22,6 +23,8 @@ async def main() -> None:
         if settings.TELEGRAM_CHAT_ID is not None:
             async with async_session_factory() as session:
                 await OwnerService(session).get_or_create(settings.TELEGRAM_CHAT_ID)
+
+        await DeliveryBootstrap(async_session_factory, settings).ensure_users()
 
         async with TelegramClient(settings.TELEGRAM_BOT_TOKEN) as client:
 

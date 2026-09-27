@@ -1,0 +1,182 @@
+import random
+from datetime import UTC, date, datetime, time, timedelta
+from unittest.mock import AsyncMock, Mock
+from zoneinfo import ZoneInfo
+
+import pytest
+
+from src.models.scheduling import (
+    CollectorStateORM,
+    UserNotificationSettingsORM,
+    UserSubscriptionORM,
+)
+from src.models.user import UserORM
+from src.services.collector_policy import COLLECTOR_POLICIES, next_collection
+from src.services.entitlements import (
+    EffectiveNotificationSettings,
+    EntitlementService,
+    digest_due,
+)
+from src.services.scheduler import SchedulerService
+
+ZONE = "America/Montevideo"
+NOW = datetime(2026, 9, 27, 12, 2, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    "local_hour,initial,expected_hour,day",
+    [
+        (1, True, 2, 27),
+        (3, True, 3, 27),
+        (3, False, 10, 27),
+        (4, False, 10, 27),
+        (12, False, 18, 27),
+        (20, False, 2, 28),
+    ],
+)
+def test_next_window_utc_storage(local_hour, initial, expected_hour, day):
+    now = datetime(2026, 9, 27, local_hour, tzinfo=ZoneInfo(ZONE))
+    result = next_collection(
+        now, COLLECTOR_POLICIES["remoteok"], ZONE, initial=initial, rng=random.Random(7)
+    )
+    local = result.astimezone(ZoneInfo(ZONE))
+    assert local.day == day
+    assert (
+        expected_hour <= local.hour < (4 if expected_hour == 3 else expected_hour + 2)
+    )
+    assert result.tzinfo == UTC
+    assert result >= now
+
+
+def test_jitter_changes_with_seed_and_stays_in_window():
+    values = {
+        next_collection(
+            NOW, COLLECTOR_POLICIES["remoteok"], ZONE, rng=random.Random(seed)
+        )
+        for seed in range(20)
+    }
+    assert len(values) > 1
+    assert all(10 <= value.astimezone(ZoneInfo(ZONE)).hour < 12 for value in values)
+
+
+def test_naive_clock_rejected():
+    with pytest.raises(ValueError):
+        next_collection(datetime(2026, 9, 27), COLLECTOR_POLICIES["remoteok"], ZONE)
+
+
+def preferences():
+    return UserNotificationSettingsORM(
+        timezone=ZONE,
+        digest_time=time(11, 30),
+        min_score=42,
+        max_jobs_per_digest=3,
+        digest_enabled=True,
+    )
+
+
+@pytest.mark.parametrize(
+    "status,end,premium",
+    [
+        ("trial", NOW + timedelta(seconds=1), True),
+        ("trial", NOW, False),
+        ("trial", NOW - timedelta(days=1), False),
+        ("trial", None, False),
+        ("active", None, True),
+        ("active", NOW + timedelta(seconds=1), True),
+        ("active", NOW, False),
+        ("expired", NOW + timedelta(days=1), False),
+    ],
+)
+def test_entitlements_boundaries_and_preserved_preferences(status, end, premium):
+    prefs = preferences()
+    subscription = UserSubscriptionORM(
+        status=status, trial_ends_at=end, subscription_ends_at=end
+    )
+    effective = EntitlementService().effective(prefs, subscription, NOW)
+    assert effective.premium == premium
+    assert effective.digest_time == (time(11, 30) if premium else time(9))
+    assert effective.min_score == (42 if premium else 70)
+    assert effective.timezone == ZONE and effective.max_jobs_per_digest == 3
+    assert prefs.digest_time == time(11, 30) and prefs.min_score == 42
+
+
+def test_free_defaults_configurable_and_no_subscription():
+    effective = EntitlementService(
+        free_digest_time=time(8), free_min_score=80
+    ).effective(preferences(), None, NOW)
+    assert effective.digest_time == time(8) and effective.min_score == 80
+
+
+@pytest.mark.parametrize(
+    "hour,minute,done,enabled,expected",
+    [
+        (8, 59, False, True, False),
+        (9, 2, False, True, True),
+        (9, 2, True, True, False),
+        (9, 2, False, False, False),
+    ],
+)
+def test_digest_due_local_date(hour, minute, done, enabled, expected):
+    settings = EffectiveNotificationSettings(ZONE, time(9), 70, 10, enabled, False)
+    now = datetime(2026, 9, 27, hour, minute, tzinfo=ZoneInfo(ZONE)).astimezone(UTC)
+    assert digest_due(settings, now, {date(2026, 9, 27)} if done else set()) is expected
+
+
+def test_local_calendar_day_and_dst_repeated_hour():
+    settings = EffectiveNotificationSettings(
+        "America/New_York", time(1, 30), 70, 10, True, False
+    )
+    first = datetime(2026, 11, 1, 5, 40, tzinfo=UTC)
+    second = datetime(2026, 11, 1, 6, 40, tzinfo=UTC)
+    assert digest_due(settings, first, set())
+    assert not digest_due(settings, second, {date(2026, 11, 1)})
+    settings = EffectiveNotificationSettings(ZONE, time(22), 70, 10, True, False)
+    assert digest_due(
+        settings, datetime(2026, 9, 28, 2, tzinfo=UTC), {date(2026, 9, 28)}
+    )
+
+
+async def test_dispatch_uses_persisted_timestamp():
+    publish = Mock()
+    service = SchedulerService(None, publish, ZONE, EntitlementService())
+    service.collectors = AsyncMock()
+    due = NOW - timedelta(minutes=1)
+    service.collectors.due.return_value = [
+        CollectorStateORM(source="remoteok", next_run_at=due)
+    ]
+    for _ in range(2):
+        assert await service.dispatch_collectors(NOW) == 1
+    assert publish.call_args.kwargs["args"] == [due.isoformat()]
+    assert publish.call_args.args == ("jobs.collect_remoteok",)
+    assert len(publish.call_args_list) == 2
+    service.collectors.update.assert_not_called()
+
+
+async def test_digest_dispatches_users_and_skips_finished_day():
+    service = SchedulerService(None, Mock(), ZONE, EntitlementService())
+    service.digests = AsyncMock()
+    prefs = preferences()
+    service.digests.users.return_value = [
+        (UserORM(id=17, telegram_id=123), prefs, None)
+    ]
+    service.digests.attempted.return_value = False
+    assert await service.dispatch_digests(NOW) == 1
+    service.publish.assert_called_once_with(
+        "notifications.send_daily_digest", args=[17, "2026-09-27"]
+    )
+    service.digests.attempted.return_value = True
+    assert await service.dispatch_digests(NOW) == 0
+
+
+async def test_active_trial_custom_time_not_yet_due():
+    service = SchedulerService(None, Mock(), ZONE, EntitlementService())
+    service.digests = AsyncMock()
+    service.digests.users.return_value = [
+        (
+            UserORM(id=17),
+            preferences(),
+            UserSubscriptionORM(status="trial", trial_ends_at=NOW + timedelta(days=1)),
+        ),
+    ]
+    assert await service.dispatch_digests(NOW) == 0
+    service.publish.assert_not_called()

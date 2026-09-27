@@ -1,81 +1,256 @@
 # Job Hunter Bot
 
-Minimal FastAPI project foundation for a Telegram job search bot.
+FastAPI foundation, Remote OK collection and a Telegram daily job digest.
+PostgreSQL and Redis run in Docker; Python processes run locally through Poetry.
 
-## Local persistence
+## Development
 
-Install dependencies with `poetry install`. Copy `.env.example` to `.env` on a
-fresh checkout, preserving any existing settings. PostgreSQL credentials are
-read from `DB_USER`, `DB_PASS`, and `DB_NAME`; the Compose service maps these to
-`POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB`.
-The example password is for local development only.
+Install dependencies with `poetry install`. On a fresh checkout copy
+`.env.example` to `.env`; preserve an existing file and keep secrets out of Git.
+PostgreSQL uses `DB_HOST/PORT/USER/PASS/NAME`. If port 5432 is occupied, use
+`DB_PORT=5433`. Changing environment credentials does not change an initialized
+database volume.
 
 ```bash
-docker compose up -d postgres --wait
+docker compose up -d postgres redis
 docker compose ps
+docker compose exec redis redis-cli ping
 poetry run alembic upgrade head
 poetry run alembic current
-poetry run python -m src.scripts.collect_remoteok
 ```
 
-Run the collection command again to verify that known jobs are reported as
-`duplicates`. The summary contains `received`, `new`, `duplicates`,
-`filter_rejected`, `below_score`, `sent`, and `failed`, plus `notification_skipped`
-and `limit_reached`. An empty source response logs a warning because it does not
-verify persistence.
-If port 5432 is occupied, set `DB_PORT=5433` (or another free port) in `.env`.
-The database port inside the container remains 5432. Data lives in the named
-`job-hunter-bot_postgres_data` volume. Changing credentials in `.env` does not
-change credentials in an already initialized PostgreSQL volume.
+Terminal 1:
 
-The application still runs locally:
+```bash
+poetry run celery -A src.tasks.celery_app:celery_app worker -l INFO
+```
+
+Terminal 2 (one Beat instance):
+
+```bash
+poetry run celery -A src.tasks.celery_app:celery_app beat -l INFO
+```
+
+Terminal 3 (one polling instance per bot):
+
+```bash
+poetry run python -m src.scripts.telegram_polling
+```
+
+Optional API:
 
 ```bash
 poetry run uvicorn src.main:app --reload
 ```
 
-`GET /health` returns `{"status": "ok"}` without a database query.
+`GET /health` returns `{"status": "ok"}`. Polling stays outside Celery.
+Configure `TELEGRAM_BOT_TOKEN` and the owner's private `TELEGRAM_CHAT_ID`.
+The user must have started the bot. Blank credentials disable delivery.
+Chat ID is used only to bootstrap the owner; digest sends use each active
+`UserORM.telegram_id`. Existing inactive users remain inactive.
 
-## Persistence contract
+Redis 7 is bound to loopback, uses an AOF volume and provides the broker, result
+backend and collector locks. PostgreSQL 16 also binds to loopback and retains
+data in its named volume. Python services are not containerized.
+Stop local worker/Beat/polling with Ctrl+C; `docker compose stop` stops databases
+without deleting their volumes. Beat's local schedule files are Git-ignored.
 
-The script runs `RemoteOKCollector -> NormalizationService -> JobSaveService ->
-PostgreSQL -> FilterService -> ScoringService -> NotificationService -> Telegram`.
-Only newly saved jobs reach filtering and scoring. Persistence remains independent
-of the owner's filters and score threshold.
-`JobDTO` stays independent of the ORM. `job_to_orm` copies DTO fields and converts
-aware timestamps to UTC; naive timestamps are rejected.
+## Settings
 
-- `JobRepository(session)` exposes async `get_by_source_external_id(source,
-  external_id)`, `get_by_fingerprint(fingerprint)`, and `add(job)`. It flushes
-  inserts but never commits. Fingerprint lookup returns the first row by ID.
-- `DeduplicationService(repository).check(job)` checks source/external ID first,
-  then fingerprint. Its result includes `is_duplicate`, `reason`,
-  `existing_job_id`, and the fingerprint when calculated.
-- `DeduplicationService.calculate_fingerprint(job)` hashes a UTF-8 JSON pair of
-  canonical company and title with SHA-256. Canonicalization lowercases, removes
-  dots/commas/apostrophes, converts simple punctuation and underscores to spaces,
-  converts `&` to `and`, and collapses whitespace. `+` and `#` remain meaningful.
-  Company suffixes and seniority words stay intact. A missing company becomes an
-  empty string. Displayed DTO fields are unchanged.
-- `JobSaveService(session).save_if_new(job)` returns `JobSaveResult` with
-  `status` (`saved` or `duplicate`), `job_id`, and optional `reason`.
-  It owns one transaction per call: commit on insert, rollback on a duplicate or
-  error. Use a dedicated session without unrelated pending work, and a separate
-  session per concurrent task. A conflict on `uq_jobs_source_external_id` is
-  rolled back and resolved to the existing row; other integrity errors propagate.
+| Setting | Default |
+| --- | --- |
+| REDIS_HOST | localhost |
+| REDIS_PORT | 6379 |
+| REDIS_DB | 0 |
+| computed REDIS_URL | redis://localhost:6379/0 |
+| SCHEDULER_TIMEZONE | America/Montevideo |
+| TRIAL_DAYS | 7 |
+| FREE_DIGEST_TIME | 09:00 |
+| FREE_MIN_SCORE | 70 |
+| FREE_MAX_JOBS_PER_DIGEST | 10 |
 
-The `jobs` table has a primary key, `UNIQUE(source, external_id)`, and a
-non-unique `ix_jobs_fingerprint` index. Fingerprint matching is an MVP heuristic:
-identical company/title pairs (especially missing companies) can suppress
-separate openings. Concurrent inserts with different source IDs and identical
-fingerprints can both succeed; only source identity has a database uniqueness
-guarantee. No fuzzy matching or distributed locking is used.
+Digest time is parsed as a local Python `time`; timezone offsets are rejected.
+The scheduler timezone must be an IANA name. Celery uses UTC.
+The old `MIN_NOTIFICATION_SCORE` and `MAX_NOTIFICATIONS_PER_RUN` settings remain
+accepted for compatibility but no longer control collection or digest delivery.
 
-`remote_regions` and `technologies` use PostgreSQL string arrays. All timestamps
-use `TIMESTAMP WITH TIME ZONE`. `created_at` and `updated_at` default to database
-`now()`; SQLAlchemy updates `updated_at` on updates through the mapped table.
-Raw SQL updates must set `updated_at` explicitly. Publication, collection, and
-persistence timestamps retain separate meanings. There is no vacancy score.
+## Collection
+
+`RemoteOKCollector -> JobDTO -> NormalizationService -> JobSaveService -> PostgreSQL`.
+No filtering, scoring or Telegram delivery runs in collection.
+
+`JobPipeline(save_service).run(jobs)` returns
+`CollectionResult(received, new, duplicates, failed)`.
+`CollectionService(sessions, redis, timezone).collect_remoteok(expected_next_run=None)`
+adds the source lock, HTTP collection and persistent scheduling.
+Invalid normalized jobs increment `failed`; database errors abort the run.
+HTTP errors, rate limits and invalid source responses raise `CollectionError`
+instead of appearing as successful empty responses.
+
+Manual collection, even without Telegram credentials:
+
+```bash
+poetry run python -m src.scripts.collect_remoteok
+```
+
+Or enqueue a worker task:
+
+```bash
+poetry run python -c 'from src.tasks.jobs import collect_remoteok; print(collect_remoteok.delay().id)'
+```
+
+Only Remote OK is registered. Its policy has three local windows:
+**02:00–04:00, 10:00–12:00, 18:00–20:00**, in `SCHEDULER_TIMEZONE`.
+On first dispatch, the missing state is initialized in the nearest window
+(including the remainder of the current window). After a successful run, stdlib
+`random.randrange` chooses a second inside the next window, excluding its end.
+The UTC timestamp is saved once as `collector_states.next_run_at`.
+Ordinary dispatcher ticks and restarts reuse that value; imports never run HTTP.
+
+A dispatcher polls the database every 15 minutes. Thus actual collection can
+start up to about 15 minutes after the selected timestamp, plus queue delay.
+A retry after failure/partial collection is scheduled one hour later; retries
+can occur outside regular windows. There is no automatic immediate retry loop.
+
+The per-source Redis lock uses a token-checked Lua release and a 660-second TTL.
+Collection work has a 510-second async deadline and the whole service call
+has a 600-second deadline (including manual runs); Celery has 540/600-second
+soft/hard limits. A duplicate running collector skips. Queued scheduled tasks
+carry the expected timestamp and skip once the stored schedule has moved.
+Manual collection intentionally bypasses the due-time check but respects the lock.
+After a killed worker the lease expires and a later dispatcher can try again.
+
+`collector_states` stores source (unique), last start/success/finish, next run,
+status, sanitized error type, and creation/update timestamps.
+
+Persistence preserves the existing source/external ID unique constraint and
+company/title fingerprint deduplication. Fingerprint matching is a heuristic;
+only source identity has a database uniqueness guarantee. JobSaveService owns a
+transaction per job, committing new rows and rolling back duplicates/errors.
+DTOs stay independent of ORM models; timestamps must be aware and are stored in
+UTC. Raw SQL updates must explicitly update `updated_at`.
+
+## Daily delivery
+
+Beat tasks:
+
+| Task | Interval / trigger |
+| --- | --- |
+| scheduler.dispatch_collectors | 15 minutes |
+| scheduler.dispatch_digests | 5 minutes |
+| jobs.collect_remoteok | Due collector or manual task |
+| notifications.send_daily_digest | Due user or manual task |
+
+Tasks are thin `asyncio.run` wrappers. Every invocation creates and disposes its
+own async database engine and Redis client; pooled connections never cross event
+loops. Both Celery serializers are JSON. Worker prefetch is one.
+
+`DailyDigestService(sessions, client, entitlements).send(user_id, expected_date=None)`
+is the reusable delivery API. The dispatcher reads active users and enabled
+preferences, resolves entitlements, converts UTC now with `ZoneInfo`, and checks
+whether local digest time has passed. Delivery normally occurs within the next
+5–10 minutes, depending on worker load. Missed times can catch up later the same
+local day. A queued task for a different local date skips.
+
+Candidates are jobs for which **no notification record for this user exists**,
+irrespective of creation time. Thus older jobs and jobs omitted by yesterday's
+limit remain eligible. Every candidate passes the existing `FilterService`
+and `ScoringService`. Results sort by score descending, then job ID for ties;
+effective threshold and maximum count determine the selection. Scoring weights
+are unchanged. `default_user_filters(timezone)` supplies the existing Python,
+remote, Worldwide/LATAM/South America/Uruguay profile and excludes US-only work.
+Filter persistence is deferred; this profile is shared across users.
+
+Before any Telegram request, the service commits a `digest_runs` reservation
+with **UNIQUE(user_id, local_date)**. Concurrent or repeated tasks cannot reserve
+the same date. Empty selection records `empty` and sends no message.
+A nonempty run sends a short summary (up to five top titles), then existing job
+cards with feedback buttons, through `NotificationService`. Progress and summary
+message ID are recorded. Final status is `sent`, `partial` or `failed`.
+An interrupted run can remain `pending`; every status prevents another attempt
+that day. Dates follow the user's timezone, including DST and UTC date rollover.
+
+The existing **UNIQUE(user_id, job_id)** notification reservation is committed
+before each individual message. Existing `sent`, `pending` and `failed` records
+are never sent automatically again. Telegram timeout and DB failure after an
+HTTP send are ambiguous, so this MVP prioritizes avoiding duplicates over
+guaranteed delivery. Summary/individual sends and database writes cannot share
+one atomic transaction. A failed summary or crash can leave today's digest
+incomplete; unattempted jobs stay candidates for a later day. No retry engine or
+daily reservation deletion is performed automatically.
+
+## Preferences, trial and subscriptions
+
+Migration `54383f510932` follows `664c622669e5` and adds:
+
+- `collector_states`: persistent source schedule and run history fields.
+- `user_notification_settings`: unique user FK, IANA timezone, local digest time,
+  score threshold, enabled flag, maximum jobs, creation/update timestamps.
+- `user_subscriptions`: unique user FK, trial/active/expired status,
+  trial start/end, subscription start/end, creation/update timestamps.
+- `digest_runs`: unique user/local date, status, start/finish, summary message ID,
+  selected/sent/failed/skipped counts and last error.
+
+Polling startup and digest dispatch bootstrap missing preferences/subscriptions,
+including the existing owner. Defaults use America/Montevideo, 09:00, score 70,
+10 jobs and a seven-day trial. Inserts use ON CONFLICT DO NOTHING and never reset
+stored preferences or renew an expired trial.
+
+`EntitlementService.effective(preferences, subscription, now)` centralizes rules:
+
+- Trial with `now < trial_ends_at`: stored custom time and threshold apply.
+- Active with no end, or `now < subscription_ends_at`: same premium capabilities.
+- Otherwise: `FREE_DIGEST_TIME` and `FREE_MIN_SCORE` apply without overwriting
+  stored custom values. Timezone and saved job limit remain available to everyone.
+
+For example, a trial user storing 11:30 / score 42 receives those effective
+values. After trial expiry, the same record resolves to 09:00 / score 70.
+An active subscription restores 11:30 / 42. A free Madrid user receives 09:00
+Europe/Madrid, and a free Uruguay user 09:00 America/Montevideo.
+There are no payment integrations or Telegram preference commands yet.
+
+## Manual digest check
+
+Inspect registered tasks:
+
+```bash
+poetry run celery -A src.tasks.celery_app:celery_app inspect registered
+```
+
+Bootstrap/check the dispatcher (this can enqueue today's real delivery):
+
+```bash
+poetry run python -c 'from src.tasks.scheduler import dispatch_digests; print(dispatch_digests.delay().id)'
+```
+
+For development, edit the owner's row in PostgreSQL, setting an active trial,
+a local `digest_time` a few minutes ahead, and a small `max_jobs_per_digest`.
+Use the existing user ID and preserve original values for restoration:
+
+```bash
+docker compose exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+```
+
+Inspect `user_notification_settings`, `user_subscriptions`, `digest_runs`
+and `notifications`. After delivery repeat the dispatcher: today's run must
+not produce a second summary. Empty selection also consumes today's attempt.
+Do not delete real daily reservations to repeat a test. Use fake repositories
+in unit tests for repeated scenarios. Temporarily expire trial to inspect
+effective defaults, then restore it; no need to wait seven days.
+
+## Feedback
+
+Job cards keep `Сохранить` and `Не подходит` buttons, handled by the independent
+polling process. Callback data is `save:<job_id>` or `reject:<job_id>`.
+The handler checks the Telegram sender against an active persisted user, stores
+`saved`/`rejected` feedback and answers the callback. Unknown users are not
+registered automatically. Repeated presses update one unique user/job row.
+Feedback does not modify notification status or scoring weights.
+
+Polling confirms Telegram offsets on the next request and handles restarts
+idempotently. It uses a fresh database session per callback and a 30-second
+long-poll timeout. Network errors retry after three seconds. Do not run multiple
+pollers for the same token or combine polling with an active webhook.
 
 ## Checks
 
@@ -86,149 +261,9 @@ poetry run pytest
 poetry run alembic check
 ```
 
-Unit tests use standard-library mocks and do not require PostgreSQL. Migration
-application, repeated collection, and a manual concurrent insert exercise the
-real database; there is no separate integration database stack at this stage.
-
-## Owner and Telegram notifications
-
-No additional dependencies are required. Configure these optional settings in
-`.env` (never commit the bot token):
-
-```dotenv
-TELEGRAM_BOT_TOKEN=
-TELEGRAM_CHAT_ID=
-MIN_NOTIFICATION_SCORE=70
-MAX_NOTIFICATIONS_PER_RUN=5
-```
-
-Blank Telegram settings are treated as unset. Without credentials, the script
-prints `Telegram manual test skipped: credentials are not configured` and still
-saves new jobs. `MIN_NOTIFICATION_SCORE` must be 0–100; the attempt limit must be
-nonnegative (`0` disables sending). For the first real check, limit attempts to one:
-
-```bash
-MAX_NOTIFICATIONS_PER_RUN=1 poetry run python -m src.scripts.collect_remoteok
-```
-
-The owner is bootstrapped from `TELEGRAM_CHAT_ID` using `OwnerService.get_or_create`.
-An existing inactive owner stays inactive and receives no messages. Owner filters
-remain a `UserFilterDTO` created in `owner_filters()` in the script: Python is
-required, remote work is required, Worldwide/LATAM/South America/Uruguay are
-allowed, US-only jobs are excluded, and the timezone is America/Montevideo.
-
-`TelegramClient(token)` is an async context manager that reuses one httpx client.
-`send_message(chat_id, text, reply_markup=None)` returns the Telegram message ID;
-`aclose()` closes the client. Errors are exposed as sanitized `TelegramAPIError`
-exceptions; HTTP request logs redact the bot URL token. No parse mode is used.
-`format_job_message(job, score)` produces plain text capped at 4096 UTF-16 units.
-`build_job_keyboard(job_id, url)` adds an HTTP(S) URL button and short callbacks
-`save:<job_id>` and `reject:<job_id>` (at most 64 bytes). Run the callback polling process below to activate the two feedback buttons.
-
-`NotificationService(session, client).notify(user=..., job_id=..., job=..., score=...)`
-returns `NotificationResult(sent, skipped, reason, telegram_message_id)`.
-Repositories flush/update only; services own transactions. Use a session without
-unrelated pending work. The pipeline bootstraps the owner in a separate session
-so per-job rollback does not expire the owner.
-
-The service first checks `(user_id, job_id)`, then inserts and **commits** a
-`pending` reservation before HTTP. Only the caller that creates the reservation
-sends. Successful sends are marked `sent` with `telegram_message_id` and UTC
-`sent_at`; Telegram failures are marked `failed`. Existing `sent`, `pending`, and
-`failed` records are skipped with `already_sent`, `already_pending`, and
-`previous_failed`, respectively. Only the expected uniqueness conflict is treated
-as a duplicate; unrelated database errors propagate.
-
-This MVP prioritizes avoiding repeated sends, not guaranteed delivery. A crash
-after reserving but before sending can leave an unsent `pending` row. A timeout
-may mean Telegram accepted the message; a failure to save the success also leaves
-`pending`. Neither state is automatically retried. The database and Telegram do
-not share a transaction, so exactly-once delivery is not guaranteed.
-
-The per-run limit counts failed HTTP attempts as well as successful ones. The
-script continues saving the rest of the batch after reaching the limit. Existing
-jobs are never backfilled: jobs skipped because credentials were absent, the
-limit was reached, or the owner was inactive are not automatically notified on
-later runs. No notifications are created for rejected or below-threshold jobs.
-
-Migration `bf2b0ae7bf9d` adds `users` and `notifications`. Users have a unique
-BigInteger `telegram_id`; notifications reference users/jobs, store the per-user
-score and delivery status, and enforce `UNIQUE(user_id, job_id)`. The status CHECK
-allows only `pending`, `sent`, and `failed`. `ix_notifications_job_id` supports
-job lookups; the composite unique index also supports user lookups.
-
-Tests use a fake Telegram client and `httpx.MockTransport`, never real Telegram
-requests. They cover delivery ordering, duplicate races, failures, pending rows,
-message formatting, token redaction, owner bootstrap, and pipeline limits.
-
-## Callback feedback and long polling
-
-Apply migrations and start the separate manual polling process:
-
-```bash
-poetry run alembic upgrade head
-poetry run python -m src.scripts.telegram_polling
-```
-
-The runner uses the existing `TELEGRAM_BOT_TOKEN` and optionally bootstraps the
-single owner from `TELEGRAM_CHAT_ID` with `OwnerService`. For the owner-bot MVP,
-configure a private chat ID (the same ID as the owner Telegram user), not a group
-chat ID. Other users are never registered from callbacks. Unknown/inactive users
-receive a short callback answer and no feedback is saved.
-
-Only one polling process should run for a bot. Long polling uses a 30-second
-Telegram timeout, with a longer HTTP read timeout. Requests explicitly select
-`callback_query` updates. No webhook is configured or deleted by this runner.
-An existing webhook or another polling process can cause Telegram API conflicts;
-resolve that configuration before running this local poller.
-
-`TelegramClient.get_updates(offset=None, timeout=30)` returns update dictionaries.
-`answer_callback_query(callback_query_id, text=None)` acknowledges a button press
-without sending a new chat message. Both methods reuse the existing HTTP client
-and sanitized error handling.
-
-`parse_callback_data(data)` accepts `save:<job_id>` and `reject:<job_id>` and
-returns `CallbackAction(job_id, feedback_type)` or `None` for invalid input.
-IDs must be positive integers within the existing PostgreSQL INTEGER range.
-The parser rejects malformed data, unknown actions, extra fields and huge IDs.
-The handler takes the identity from `callback_query.from.id`, never from callback
-data or the message's chat ID. It resolves the user and job through repositories.
-
-`CallbackHandler(users, jobs, feedback, client).handle(callback)` maps `save` to
-`saved` and `reject` to `rejected`. It commits feedback before answering with
-`Вакансия сохранена` or `Отмечено как не подходящее`. The message and keyboard
-remain unchanged. Logs contain events and internal user/job IDs, not raw update
-payloads, names, chat contents, or the bot token.
-
-`FeedbackRepository(session)` exposes async `get_by_user_job(user_id, job_id)`,
-`add(feedback)` and `update_type(feedback, feedback_type)`. Repository methods do
-not commit. `FeedbackService(session).set_feedback(user_id, job_id, feedback_type)`
-validates `saved`/`rejected`, creates or updates the row and owns commit/rollback.
-A concurrent insert conflict on the user/job pair is recovered by updating the
-winning row. Unrelated DB errors propagate. Use a session without unrelated
-pending writes and `expire_on_commit=False`, as provided by the session factory.
-
-Migration `664c622669e5` adds `feedback(id, user_id, job_id, feedback_type,
-created_at, updated_at)`, timezone-aware timestamps, FK to users/jobs,
-`UNIQUE(user_id, job_id)`, a CHECK for the two allowed types and a job ID index.
-Repeated presses preserve the same feedback row; changing the action replaces its
-current type. The composite unique index supports later queries by user. Feedback
-does not modify notification status, job records, or scoring weights.
-
-`poll_updates(client, handle_update, timeout=30, retry_delay=3)` processes updates
-sequentially and keeps `offset = update_id + 1` in memory after each handled update.
-Ignored non-callback updates also advance the offset. Network errors pause for
-3 seconds before retrying. Handler/DB errors leave the failing update unconfirmed;
-it is retried before later updates. A failed/expired callback acknowledgement is
-logged after handling, so it does not repeatedly overwrite newer feedback.
-
-The next getUpdates request confirms the offset to Telegram. A process restart
-can therefore replay a last unconfirmed callback; feedback writes are idempotent.
-No persistent cursor or Redis is used. A new DB session is created per callback
-and closed before the next long poll. Ctrl+C cancels polling, closes the HTTP
-client and disposes the DB engine without a normal-shutdown traceback.
-
-For a manual check, use an already sent job message. Press `Сохранить`, verify the
-popup and `saved` row; then press `Не подходит` and verify `rejected` with the same
-row ID and a single row for the user/job pair. Unit tests use mocks and never call
-Telegram; DB checks can use a fake Telegram client without creating new jobs.
+Unit tests use fake repositories/clients and standard-library mocks, requiring
+no PostgreSQL, Redis or real Telegram requests. They cover scheduling windows,
+persisted jitter, timezones, daily uniqueness, subscription boundaries, filtering,
+ranking, caps, delivery failures, locks, callbacks and task registration.
+Migrations, broker/worker execution and live Telegram delivery are separate
+manual checks.
