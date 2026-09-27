@@ -8,6 +8,9 @@ class JobRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
+    async def get_by_id(self, job_id: int) -> JobORM | None:
+        return await self.session.get(JobORM, job_id)
+
     async def get_by_source_external_id(
         self, source: str, external_id: str
     ) -> JobORM | None:

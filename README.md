@@ -123,8 +123,7 @@ allowed, US-only jobs are excluded, and the timezone is America/Montevideo.
 exceptions; HTTP request logs redact the bot URL token. No parse mode is used.
 `format_job_message(job, score)` produces plain text capped at 4096 UTF-16 units.
 `build_job_keyboard(job_id, url)` adds an HTTP(S) URL button and short callbacks
-`save:<job_id>` and `reject:<job_id>` (at most 64 bytes). Callback handlers are not
-implemented yet, so the two callback buttons currently have no effect.
+`save:<job_id>` and `reject:<job_id>` (at most 64 bytes). Run the callback polling process below to activate the two feedback buttons.
 
 `NotificationService(session, client).notify(user=..., job_id=..., job=..., score=...)`
 returns `NotificationResult(sent, skipped, reason, telegram_message_id)`.
@@ -161,3 +160,75 @@ job lookups; the composite unique index also supports user lookups.
 Tests use a fake Telegram client and `httpx.MockTransport`, never real Telegram
 requests. They cover delivery ordering, duplicate races, failures, pending rows,
 message formatting, token redaction, owner bootstrap, and pipeline limits.
+
+## Callback feedback and long polling
+
+Apply migrations and start the separate manual polling process:
+
+```bash
+poetry run alembic upgrade head
+poetry run python -m src.scripts.telegram_polling
+```
+
+The runner uses the existing `TELEGRAM_BOT_TOKEN` and optionally bootstraps the
+single owner from `TELEGRAM_CHAT_ID` with `OwnerService`. For the owner-bot MVP,
+configure a private chat ID (the same ID as the owner Telegram user), not a group
+chat ID. Other users are never registered from callbacks. Unknown/inactive users
+receive a short callback answer and no feedback is saved.
+
+Only one polling process should run for a bot. Long polling uses a 30-second
+Telegram timeout, with a longer HTTP read timeout. Requests explicitly select
+`callback_query` updates. No webhook is configured or deleted by this runner.
+An existing webhook or another polling process can cause Telegram API conflicts;
+resolve that configuration before running this local poller.
+
+`TelegramClient.get_updates(offset=None, timeout=30)` returns update dictionaries.
+`answer_callback_query(callback_query_id, text=None)` acknowledges a button press
+without sending a new chat message. Both methods reuse the existing HTTP client
+and sanitized error handling.
+
+`parse_callback_data(data)` accepts `save:<job_id>` and `reject:<job_id>` and
+returns `CallbackAction(job_id, feedback_type)` or `None` for invalid input.
+IDs must be positive integers within the existing PostgreSQL INTEGER range.
+The parser rejects malformed data, unknown actions, extra fields and huge IDs.
+The handler takes the identity from `callback_query.from.id`, never from callback
+data or the message's chat ID. It resolves the user and job through repositories.
+
+`CallbackHandler(users, jobs, feedback, client).handle(callback)` maps `save` to
+`saved` and `reject` to `rejected`. It commits feedback before answering with
+`Вакансия сохранена` or `Отмечено как не подходящее`. The message and keyboard
+remain unchanged. Logs contain events and internal user/job IDs, not raw update
+payloads, names, chat contents, or the bot token.
+
+`FeedbackRepository(session)` exposes async `get_by_user_job(user_id, job_id)`,
+`add(feedback)` and `update_type(feedback, feedback_type)`. Repository methods do
+not commit. `FeedbackService(session).set_feedback(user_id, job_id, feedback_type)`
+validates `saved`/`rejected`, creates or updates the row and owns commit/rollback.
+A concurrent insert conflict on the user/job pair is recovered by updating the
+winning row. Unrelated DB errors propagate. Use a session without unrelated
+pending writes and `expire_on_commit=False`, as provided by the session factory.
+
+Migration `664c622669e5` adds `feedback(id, user_id, job_id, feedback_type,
+created_at, updated_at)`, timezone-aware timestamps, FK to users/jobs,
+`UNIQUE(user_id, job_id)`, a CHECK for the two allowed types and a job ID index.
+Repeated presses preserve the same feedback row; changing the action replaces its
+current type. The composite unique index supports later queries by user. Feedback
+does not modify notification status, job records, or scoring weights.
+
+`poll_updates(client, handle_update, timeout=30, retry_delay=3)` processes updates
+sequentially and keeps `offset = update_id + 1` in memory after each handled update.
+Ignored non-callback updates also advance the offset. Network errors pause for
+3 seconds before retrying. Handler/DB errors leave the failing update unconfirmed;
+it is retried before later updates. A failed/expired callback acknowledgement is
+logged after handling, so it does not repeatedly overwrite newer feedback.
+
+The next getUpdates request confirms the offset to Telegram. A process restart
+can therefore replay a last unconfirmed callback; feedback writes are idempotent.
+No persistent cursor or Redis is used. A new DB session is created per callback
+and closed before the next long poll. Ctrl+C cancels polling, closes the HTTP
+client and disposes the DB engine without a normal-shutdown traceback.
+
+For a manual check, use an already sent job message. Press `Сохранить`, verify the
+popup and `saved` row; then press `Не подходит` and verify `rejected` with the same
+row ID and a single row for the user/job pair. Unit tests use mocks and never call
+Telegram; DB checks can use a fake Telegram client without creating new jobs.

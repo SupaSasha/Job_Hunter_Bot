@@ -86,3 +86,75 @@ async def test_network_errors_do_not_expose_request_url(error_class) -> None:
     rendered = "".join(traceback.format_exception(caught.value))
     assert TOKEN not in rendered
     assert caught.value.__suppress_context__ is True
+
+
+@pytest.mark.parametrize("offset", [None, 123])
+async def test_get_updates_has_long_http_timeout_and_callback_filter(offset) -> None:
+    def handler(request):
+        expected = {"timeout": 30, "allowed_updates": ["callback_query"]}
+        if offset is not None:
+            expected["offset"] = offset
+        assert json.loads(request.content) == expected
+        assert request.url.path.endswith("/getUpdates")
+        assert request.extensions["timeout"]["read"] > 30
+        return httpx.Response(200, json={"ok": True, "result": [{"update_id": 123}]})
+
+    async with TelegramClient(TOKEN, transport=httpx.MockTransport(handler)) as client:
+        assert await client.get_updates(offset=offset) == [{"update_id": 123}]
+
+
+@pytest.mark.parametrize(
+    "result", [None, {}, [None], [{}], [{"update_id": True}], [{"update_id": -1}]]
+)
+async def test_get_updates_validates_response(result) -> None:
+    async with TelegramClient(
+        TOKEN,
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, json={"ok": True, "result": result})
+        ),
+    ) as client:
+        with pytest.raises(TelegramAPIError, match="invalid updates"):
+            await client.get_updates()
+
+
+@pytest.mark.parametrize("text", [None, "Вакансия сохранена"])
+async def test_answer_callback_query(text) -> None:
+    def handler(request):
+        expected = {"callback_query_id": "query-1"}
+        if text is not None:
+            expected["text"] = text
+        assert json.loads(request.content) == expected
+        assert request.url.path.endswith("/answerCallbackQuery")
+        return httpx.Response(200, json={"ok": True, "result": True})
+
+    async with TelegramClient(TOKEN, transport=httpx.MockTransport(handler)) as client:
+        assert await client.answer_callback_query("query-1", text=text) is None
+
+
+async def test_answer_callback_rejects_unexpected_result() -> None:
+    async with TelegramClient(
+        TOKEN,
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, json={"ok": True, "result": 1})
+        ),
+    ) as client:
+        with pytest.raises(TelegramAPIError, match="acknowledge"):
+            await client.answer_callback_query("query-1")
+
+
+@pytest.mark.parametrize("method", ["get_updates", "answer_callback_query"])
+async def test_new_api_methods_redact_network_errors(method, caplog) -> None:
+    def handler(request):
+        raise httpx.ReadTimeout(f"failed: {request.url}", request=request)
+
+    with caplog.at_level(logging.DEBUG):
+        async with TelegramClient(
+            TOKEN, transport=httpx.MockTransport(handler)
+        ) as client:
+            with pytest.raises(TelegramAPIError) as caught:
+                if method == "get_updates":
+                    await client.get_updates()
+                else:
+                    await client.answer_callback_query("query-1")
+    assert TOKEN not in "".join(traceback.format_exception(caught.value))
+    assert TOKEN not in caplog.text

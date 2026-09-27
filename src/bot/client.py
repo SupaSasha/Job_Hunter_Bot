@@ -35,7 +35,8 @@ class TelegramClient:
     ) -> None:
         if not token.strip():
             raise ValueError("Telegram bot token is not configured")
-        self._url = f"https://api.telegram.org/bot{token.strip()}/sendMessage"
+        self._base_url = f"https://api.telegram.org/bot{token.strip()}"
+        self._timeout = timeout
         self._client = httpx.AsyncClient(
             timeout=timeout, transport=transport, follow_redirects=False
         )
@@ -58,8 +59,24 @@ class TelegramClient:
         payload = {"chat_id": chat_id, "text": text}
         if reply_markup is not None:
             payload["reply_markup"] = reply_markup
+        result = await self._request("sendMessage", payload)
+        if not isinstance(result, dict):
+            raise TelegramAPIError("Telegram returned an unexpected response")
+        message_id = result.get("message_id")
+        if type(message_id) is not int or message_id <= 0:
+            raise TelegramAPIError("Telegram response has no valid message_id")
+        return message_id
+
+    async def _request(
+        self, method: str, payload: dict, *, read_timeout: float | None = None
+    ) -> object:
+        options = {}
+        if read_timeout is not None:
+            options["timeout"] = httpx.Timeout(self._timeout, read=read_timeout)
         try:
-            response = await self._client.post(self._url, json=payload)
+            response = await self._client.post(
+                f"{self._base_url}/{method}", json=payload, **options
+            )
         except httpx.TimeoutException:
             raise TelegramAPIError("Telegram request timed out") from None
         except httpx.RequestError:
@@ -76,11 +93,39 @@ class TelegramClient:
         if body.get("ok") is False:
             code = body.get("error_code")
             suffix = f" ({code})" if type(code) is int else ""
-            raise TelegramAPIError(f"Telegram API rejected sendMessage{suffix}")
-        result = body.get("result")
-        if body.get("ok") is not True or not isinstance(result, dict):
+            raise TelegramAPIError(f"Telegram API rejected {method}{suffix}")
+        if body.get("ok") is not True or "result" not in body:
             raise TelegramAPIError("Telegram returned an unexpected response")
-        message_id = result.get("message_id")
-        if type(message_id) is not int or message_id <= 0:
-            raise TelegramAPIError("Telegram response has no valid message_id")
-        return message_id
+        return body["result"]
+
+    async def get_updates(
+        self, offset: int | None = None, timeout: int = 30
+    ) -> list[dict]:
+        if type(timeout) is not int or timeout < 0:
+            raise ValueError("Telegram polling timeout must be a nonnegative integer")
+        if offset is not None and type(offset) is not int:
+            raise ValueError("Telegram update offset must be an integer")
+        payload = {"timeout": timeout, "allowed_updates": ["callback_query"]}
+        if offset is not None:
+            payload["offset"] = offset
+        result = await self._request(
+            "getUpdates", payload, read_timeout=max(self._timeout, timeout + 10.0)
+        )
+        if not isinstance(result, list) or any(
+            not isinstance(update, dict)
+            or type(update.get("update_id")) is not int
+            or update["update_id"] < 0
+            for update in result
+        ):
+            raise TelegramAPIError("Telegram returned invalid updates")
+        return result
+
+    async def answer_callback_query(
+        self, callback_query_id: str, text: str | None = None
+    ) -> None:
+        payload = {"callback_query_id": callback_query_id}
+        if text is not None:
+            payload["text"] = text
+        result = await self._request("answerCallbackQuery", payload)
+        if result is not True:
+            raise TelegramAPIError("Telegram did not acknowledge callback query")
