@@ -10,7 +10,7 @@ async def test_dispatch_publishes_existing_tasks_off_event_loop():
     collection, digest = Mock(), Mock()
     threads = []
     collection.delay.side_effect = lambda: threads.append(threading.get_ident())
-    dispatcher = CeleryCommandDispatcher(collection, digest)
+    dispatcher = CeleryCommandDispatcher([collection], digest)
     await dispatcher.collect()
     await dispatcher.digest(17)
     collection.delay.assert_called_once_with()
@@ -23,4 +23,14 @@ async def test_publish_error_reaches_command_handler():
     collection, digest = Mock(), Mock()
     collection.delay.side_effect = RuntimeError("broker unavailable")
     with pytest.raises(RuntimeError):
-        await CeleryCommandDispatcher(collection, digest).collect()
+        await CeleryCommandDispatcher([collection], digest).collect()
+
+
+async def test_collect_publishes_both_registered_tasks_without_waiting():
+    first, second, digest = Mock(), Mock(), Mock()
+    await CeleryCommandDispatcher([first, second], digest).collect()
+    first.delay.assert_called_once_with()
+    second.delay.assert_called_once_with()
+    first.delay.return_value.get.assert_not_called()
+    second.delay.return_value.get.assert_not_called()
+    digest.delay.assert_not_called()

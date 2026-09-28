@@ -48,12 +48,14 @@ def handler():
         digest_enabled=True,
     )
     queries.subscription.return_value = None
-    queries.collector_state.return_value = CollectorStateORM(
-        source="remoteok",
-        last_success_at=datetime(2026, 9, 28, 6, 12, tzinfo=UTC),
-        next_run_at=datetime(2026, 9, 28, 13, 47, tzinfo=UTC),
-        last_status="success",
-    )
+    queries.collector_states.return_value = [
+        CollectorStateORM(
+            source="remoteok",
+            last_success_at=datetime(2026, 9, 28, 6, 12, tzinfo=UTC),
+            next_run_at=datetime(2026, 9, 28, 13, 47, tzinfo=UTC),
+            last_status="success",
+        )
+    ]
     queries.job_count.return_value = 428
     queries.last_digest.return_value = DigestRunORM(
         local_date=date(2026, 9, 28), status="sent"
@@ -119,7 +121,7 @@ async def test_status_uses_real_values_and_local_timezone(handler):
 
 
 async def test_status_missing_state_uses_explicit_unknowns(handler):
-    handler.queries.collector_state.return_value = None
+    handler.queries.collector_states.return_value = []
     handler.queries.preferences.return_value = None
     handler.queries.last_digest.return_value = None
     handler.queries.job_count.return_value = 0
@@ -350,3 +352,24 @@ async def test_public_help_hides_admin_commands(handler):
     assert "/settings - " in reply(handler)
     assert "/collect" not in reply(handler)
     assert "/digest" not in reply(handler)
+
+
+async def test_status_lists_each_persisted_source_and_missing_registered_state(handler):
+    handler.queries.collector_states.return_value.append(
+        CollectorStateORM(
+            source="weworkremotely",
+            last_success_at=NOW,
+            next_run_at=NOW + timedelta(hours=4),
+            last_status="success",
+        )
+    )
+    await handler.handle(message("/status"))
+    text = reply(handler)
+    assert "Remote OK" in text
+    assert (
+        "We Work Remotely\nLast success: 2026-09-28 12:00\nNext run: 2026-09-28 16:00"
+        in text
+    )
+    handler.queries.collector_states.return_value = []
+    await handler.handle(message("/status"))
+    assert "We Work Remotely\nLast success: Never" in reply(handler)

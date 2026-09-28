@@ -21,6 +21,13 @@ class BotQueryRepository:
             select(CollectorStateORM).where(CollectorStateORM.source == source)
         )
 
+    async def collector_states(self) -> list[CollectorStateORM]:
+        return list(
+            await self.session.scalars(
+                select(CollectorStateORM).order_by(CollectorStateORM.source)
+            )
+        )
+
     async def job_count(self) -> int:
         return await self.session.scalar(select(func.count()).select_from(JobORM))
 

@@ -10,6 +10,7 @@ class CollectorPolicy:
     task_name: str
     windows: tuple[tuple[time, time], ...]
     retry_delay: timedelta = timedelta(hours=1)
+    display_name: str = ""
 
 
 COLLECTOR_POLICIES = {
@@ -17,7 +18,14 @@ COLLECTOR_POLICIES = {
         "remoteok",
         "jobs.collect_remoteok",
         ((time(2), time(4)), (time(10), time(12)), (time(18), time(20))),
-    )
+        display_name="Remote OK",
+    ),
+    "weworkremotely": CollectorPolicy(
+        "weworkremotely",
+        "jobs.collect_weworkremotely",
+        ((time(4), time(6)), (time(16), time(18))),
+        display_name="We Work Remotely",
+    ),
 }
 
 

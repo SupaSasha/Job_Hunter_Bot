@@ -5,7 +5,8 @@ from typing import Callable
 
 from redis.asyncio import Redis
 
-from src.collectors.remoteok import RemoteOKCollector
+from src.collectors.base import BaseJobCollector, CollectionError
+from src.collectors.registry import COLLECTORS
 from src.repositories.scheduling import CollectorStateRepository
 from src.services.collector_policy import COLLECTOR_POLICIES, next_collection
 from src.services.jobs import JobSaveService
@@ -31,7 +32,19 @@ class CollectionService:
         self.states = CollectorStateRepository(sessions)
 
     async def collect_remoteok(self, expected_next_run: str | None = None) -> dict:
-        source = "remoteok"
+        return await self.collect("remoteok", expected_next_run)
+
+    async def collect(
+        self,
+        source: str,
+        expected_next_run: str | None = None,
+        *,
+        collector: BaseJobCollector | None = None,
+    ) -> dict:
+        if source not in COLLECTORS:
+            raise ValueError("Unknown collector")
+        if collector is not None and collector.source_name != source:
+            raise ValueError("Collector source does not match")
         policy = COLLECTOR_POLICIES[source]
         async with (
             asyncio.timeout(600),
@@ -52,7 +65,7 @@ class CollectionService:
             )
             try:
                 async with asyncio.timeout(510):
-                    jobs = await RemoteOKCollector().collect()
+                    jobs = await (collector or COLLECTORS[source]()).collect()
                     async with self.sessions() as session:
                         result = await JobPipeline(JobSaveService(session)).run(jobs)
                 finished = self.clock()
@@ -77,12 +90,15 @@ class CollectionService:
                 return result.model_dump()
             except Exception as exc:
                 finished = self.clock()
+                retry_at = finished + policy.retry_delay
+                if isinstance(exc, CollectionError) and exc.retry_at is not None:
+                    retry_at = max(retry_at, exc.retry_at)
                 await self.states.update(
                     source,
                     last_finished_at=finished,
                     last_status="failed",
                     last_error=type(exc).__name__,
-                    next_run_at=finished + policy.retry_delay,
+                    next_run_at=retry_at,
                 )
                 # Keep raw exception text out of broker results/logs.
                 logger.error("Collection %s failed: %s", source, type(exc).__name__)

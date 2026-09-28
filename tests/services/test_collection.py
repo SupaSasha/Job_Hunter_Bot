@@ -53,7 +53,9 @@ def setup(monkeypatch):
     )
     collector = AsyncMock()
     collector.collect.return_value = []
-    monkeypatch.setattr("src.services.collection.RemoteOKCollector", lambda: collector)
+    from src.collectors.registry import COLLECTORS
+
+    monkeypatch.setitem(COLLECTORS, "remoteok", lambda: collector)
     return service, redis, collector, now
 
 
@@ -95,3 +97,68 @@ async def test_queued_duplicate_uses_expected_schedule_to_skip_old_task(setup):
     ] == "stale_schedule"
     collector.collect.assert_not_awaited()
     service.states.update.assert_not_awaited()
+
+
+async def test_wwr_has_own_state_window_and_same_pipeline(setup, monkeypatch):
+    from zoneinfo import ZoneInfo
+
+    from src.collectors.registry import COLLECTORS
+
+    service, redis, collector, now = setup
+    monkeypatch.setitem(COLLECTORS, "weworkremotely", lambda: collector)
+    result = await service.collect("weworkremotely")
+    assert result == dict(received=0, new=0, duplicates=0, failed=0)
+    service.states.ensure.assert_awaited_once_with(
+        "weworkremotely", now, "America/Montevideo"
+    )
+    assert service.states.update.call_args.args == ("weworkremotely",)
+    local = service.states.update.call_args.kwargs["next_run_at"].astimezone(
+        ZoneInfo("America/Montevideo")
+    )
+    assert 4 <= local.hour < 6
+    assert redis.lock.call_args.args == ("collector:weworkremotely:lock",)
+
+
+async def test_source_locks_are_independent():
+    held = set()
+
+    class Lock:
+        def __init__(self, key):
+            self.key = key
+
+        async def acquire(self):
+            if self.key in held:
+                return False
+            held.add(self.key)
+            return True
+
+        async def release(self):
+            held.remove(self.key)
+
+    redis = Mock()
+    redis.lock.side_effect = lambda key, **kwargs: Lock(key)
+    async with collector_lock(redis, "remoteok") as first:
+        async with collector_lock(redis, "remoteok") as duplicate:
+            async with collector_lock(redis, "weworkremotely") as second:
+                assert first and second and not duplicate
+    assert held == set()
+
+
+async def test_retry_after_extends_scheduler_cooldown(setup):
+    from src.collectors.base import CollectionError
+
+    service, _, collector, now = setup
+    collector.collect.side_effect = CollectionError(
+        "rate limited", retry_at=now + timedelta(hours=12)
+    )
+    await service.collect_remoteok()
+    assert service.states.update.call_args.kwargs["next_run_at"] == now + timedelta(
+        hours=12
+    )
+
+
+async def test_invalid_source_never_acquires_lock(setup):
+    service, redis, _, _ = setup
+    with pytest.raises(ValueError):
+        await service.collect("future-source")
+    redis.lock.assert_not_called()

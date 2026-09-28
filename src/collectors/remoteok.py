@@ -9,13 +9,10 @@ from typing import Any
 import httpx
 
 from src.collectors.base import BaseJobCollector
+from src.collectors.base import CollectionError as CollectionError
 from src.schemas.job import JobDTO
 
 logger = logging.getLogger(__name__)
-
-
-class CollectionError(RuntimeError):
-    """Source unavailable or returned an invalid response."""
 
 
 class RemoteOKCollector(BaseJobCollector):

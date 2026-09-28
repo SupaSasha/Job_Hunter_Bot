@@ -11,6 +11,7 @@ from src.bot.settings import SettingsHandler
 from src.repositories.bot_queries import BotQueryRepository
 from src.repositories.feedback import FeedbackRepository
 from src.repositories.users import UserRepository
+from src.services.collector_policy import COLLECTOR_POLICIES
 from src.services.default_filters import default_user_filters
 from src.services.entitlements import EffectiveNotificationSettings, EntitlementService
 
@@ -32,7 +33,7 @@ HELP = (
 )
 ADMIN_HELP = (
     "\n\nAdmin commands:\n"
-    "/collect - Run job collection now\n"
+    "/collect - Run all job collectors now\n"
     "/digest - Send today's digest now"
 )
 UNAVAILABLE = "This command is not available."
@@ -157,7 +158,9 @@ class CommandHandler:
     async def _status(self, user_id: int) -> str:
         effective = await self._effective(user_id)
         zone = ZoneInfo(effective.timezone if effective else "UTC")
-        collector = await self.queries.collector_state("remoteok")
+        states = {
+            state.source: state for state in await self.queries.collector_states()
+        }
         count = await self.queries.job_count()
         run = await self.queries.last_digest(user_id)
 
@@ -166,13 +169,23 @@ class CommandHandler:
                 value.astimezone(zone).strftime("%Y-%m-%d %H:%M") if value else fallback
             )
 
-        last_success = timestamp(
-            collector.last_success_at if collector else None, "Never"
-        )
-        next_run = timestamp(
-            collector.next_run_at if collector else None, "Not scheduled"
-        )
-        last_status = collector.last_status if collector else "Unknown"
+        collector_sections = []
+        for source in dict.fromkeys([*COLLECTOR_POLICIES, *states]):
+            collector = states.get(source)
+            policy = COLLECTOR_POLICIES.get(source)
+            name = policy.display_name if policy else source
+            last_success = timestamp(
+                collector.last_success_at if collector else None, "Never"
+            )
+            next_run = timestamp(
+                collector.next_run_at if collector else None, "Not scheduled"
+            )
+            status = (collector.last_status if collector else None) or "Unknown"
+            collector_sections.append(
+                f"{name}\nLast success: {last_success}\nNext run: {next_run}\n"
+                f"Last status: {status}"
+            )
+        collector_text = "\n\n".join(collector_sections)
         last_digest = "Never"
         if run is not None:
             day = (
@@ -188,9 +201,7 @@ class CommandHandler:
             ("Yes" if effective.digest_enabled else "No") if effective else "Unknown"
         )
         return (
-            f"Bot status: running\n\nRemote OK\n"
-            f"Last success: {last_success}\nNext run: {next_run}\n"
-            f"Last status: {last_status or 'Unknown'}\n\n"
+            f"Bot status: running\n\n{collector_text}\n\n"
             f"Jobs in database: {count}\n\nDaily digest:\n"
             f"Time: {digest_time}\n"
             f"Timezone: {effective.timezone if effective else 'Unknown'}\n"

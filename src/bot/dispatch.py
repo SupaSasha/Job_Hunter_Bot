@@ -9,13 +9,14 @@ class CommandDispatcher(Protocol):
 
 
 class CeleryCommandDispatcher:
-    def __init__(self, collection_task, digest_task):
-        self.collection_task = collection_task
+    def __init__(self, collection_tasks, digest_task):
+        self.collection_tasks = tuple(collection_tasks)
         self.digest_task = digest_task
 
     async def collect(self) -> None:
         # Publish off the event loop; never wait for the worker's result.
-        await asyncio.to_thread(self.collection_task.delay)
+        for task in self.collection_tasks:
+            await asyncio.to_thread(task.delay)
 
     async def digest(self, user_id: int) -> None:
         await asyncio.to_thread(self.digest_task.delay, user_id, run_now=True)

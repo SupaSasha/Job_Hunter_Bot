@@ -1,6 +1,6 @@
 # Job Hunter Bot
 
-FastAPI foundation, Remote OK collection and a Telegram daily job digest.
+FastAPI foundation, Remote OK and We Work Remotely collection, and a Telegram daily job digest.
 PostgreSQL and Redis run in Docker; Python processes run locally through Poetry.
 
 All application messages, source comments, documentation and tests are written in English.
@@ -78,13 +78,14 @@ accepted for compatibility but no longer control collection or digest delivery.
 
 ## Collection
 
-`RemoteOKCollector -> JobDTO -> NormalizationService -> JobSaveService -> PostgreSQL`.
+`RemoteOKCollector / WeWorkRemotelyCollector -> JobDTO -> NormalizationService -> JobSaveService (DeduplicationService) -> PostgreSQL`.
 No filtering, scoring or Telegram delivery runs in collection.
 
 `JobPipeline(save_service).run(jobs)` returns
 `CollectionResult(received, new, duplicates, failed)`.
-`CollectionService(sessions, redis, timezone).collect_remoteok(expected_next_run=None)`
+`CollectionService(sessions, redis, timezone).collect(source, expected_next_run=None)`
 adds the source lock, HTTP collection and persistent scheduling.
+The existing collect_remoteok method remains a compatibility wrapper.
 Invalid normalized jobs increment `failed`; database errors abort the run.
 HTTP errors, rate limits and invalid source responses raise `CollectionError`
 instead of appearing as successful empty responses.
@@ -93,6 +94,7 @@ Manual collection, even without Telegram credentials:
 
 ```bash
 poetry run python -m src.scripts.collect_remoteok
+poetry run python -m src.scripts.collect_weworkremotely
 ```
 
 Or enqueue a worker task:
@@ -101,8 +103,15 @@ Or enqueue a worker task:
 poetry run python -c 'from src.tasks.jobs import collect_remoteok; print(collect_remoteok.delay().id)'
 ```
 
-Only Remote OK is registered. Its policy has three local windows:
-**02:00–04:00, 10:00–12:00, 18:00–20:00**, in `SCHEDULER_TIMEZONE`.
+Registered sources use separate local windows in SCHEDULER_TIMEZONE
+(default America/Montevideo):
+
+| Source | Windows | Celery task | Redis lock |
+| --- | --- | --- | --- |
+| remoteok | 02:00–04:00, 10:00–12:00, 18:00–20:00 | jobs.collect_remoteok | collector:remoteok:lock |
+| weworkremotely | 04:00–06:00, 16:00–18:00 | jobs.collect_weworkremotely | collector:weworkremotely:lock |
+
+The small collector, policy and task registries contain only implemented sources.
 On first dispatch, the missing state is initialized in the nearest window
 (including the remainder of the current window). After a successful run, stdlib
 `random.randrange` chooses a second inside the next window, excluding its end.
@@ -112,7 +121,8 @@ Ordinary dispatcher ticks and restarts reuse that value; imports never run HTTP.
 A dispatcher polls the database every 15 minutes. Thus actual collection can
 start up to about 15 minutes after the selected timestamp, plus queue delay.
 A retry after failure/partial collection is scheduled one hour later; retries
-can occur outside regular windows. There is no automatic immediate retry loop.
+can occur outside regular windows. WWR HTTP 429 Retry-After can extend this delay.
+There is no automatic immediate retry loop.
 
 The per-source Redis lock uses a token-checked Lua release and a 660-second TTL.
 Collection work has a 510-second async deadline and the whole service call
@@ -132,6 +142,50 @@ transaction per job, committing new rows and rolling back duplicates/errors.
 DTOs stay independent of ORM models; timestamps must be aware and are stored in
 UTC. Raw SQL updates must explicitly update `updated_at`.
 
+## We Work Remotely
+
+WWR explicitly publishes a [public RSS feed](https://weworkremotely.com/remote-job-rss-feed)
+for reuse with links back to its job pages. Its [API documentation](https://weworkremotely.com/api)
+describes token authentication; the RSS feed needs no account or credentials.
+The collector uses https://weworkremotely.com/remote-jobs.rss via httpx, with the
+existing User-Agent, a timeout, a bounded response and no immediate retries.
+There is no HTML page scraping or browser automation. Parsing uses stdlib
+ElementTree and HTMLParser; no new dependency is required.
+
+Public API:
+
+- WeWorkRemotelyCollector(timeout=...).collect() -> list[JobDTO]
+- parse_feed(content: bytes) -> list[JobDTO]
+- parse_job_item(item: Element, collected_at=...) -> JobDTO
+
+The source key is weworkremotely. The feed GUID supplies external_id; currently
+it is the stable WWR job permalink. Missing GUID falls back to that permalink.
+URLs keep the original WWR job destination and remove tracking queries/fragments.
+The title is split at the feed's company/title separator. HTML descriptions are
+converted to text; scripts, styles and image markup are omitted. Publication
+and collection dates are UTC-aware. Missing salary, experience and timezone
+fields remain None. WWR's remote-only feed supplies remote=True.
+
+Only explicit technical skills/categories populate technologies; no description
+NLP is used. Nontechnical categories are excluded. Explicit country lists take
+precedence over generic Anywhere in the World labels. Headquarters/state fields
+are not treated as work eligibility. Unknown regions remain empty. The existing
+normalizer, fingerprint, filters and scoring are unchanged.
+
+Standalone source check (no database writes):
+
+```bash
+poetry run python -m src.collectors.weworkremotely
+```
+
+The persistence command above runs the same CollectionService, JobPipeline and
+JobSaveService used by Remote OK. It updates only WWR's collector state and sends
+no Telegram messages. Jobs are available to the existing daily digest subject to
+its unchanged filters, thresholds and delivery reservations.
+
+See [the WWR stage report](docs/weworkremotely-stage-report.md) for live counts,
+deduplication examples, test results and Git state.
+
 ## Daily delivery
 
 Beat tasks:
@@ -140,7 +194,8 @@ Beat tasks:
 | --- | --- |
 | scheduler.dispatch_collectors | 15 minutes |
 | scheduler.dispatch_digests | 5 minutes |
-| jobs.collect_remoteok | Due collector or manual task |
+| jobs.collect_remoteok | Due Remote OK collector or manual task |
+| jobs.collect_weworkremotely | Due WWR collector or manual task |
 | notifications.send_daily_digest | Due user or manual task |
 
 Tasks are thin `asyncio.run` wrappers. Every invocation creates and disposes its
@@ -256,7 +311,7 @@ IDs receive `This command is not available.` without exposing account data.
 | /saved | Show up to ten most recently saved jobs, without descriptions |
 | /filters | Show the current shared filter profile and effective digest time/minimum score |
 | /settings | View effective settings and edit timezone, digest time and score |
-| /collect | Owner only: enqueue Remote OK collection |
+| /collect | Owner only: enqueue both Remote OK and We Work Remotely collection |
 | /digest | Owner only: enqueue today's digest immediately |
 
 `CommandHandler(...).handle(message)` in `src/bot/commands.py` handles commands.
@@ -270,7 +325,9 @@ addressed to other bots. The username is obtained once at startup using
 [getUpdates](https://core.telegram.org/bots/api#getupdates) now requests both
 `message` and `callback_query` updates. Existing offset and callback behavior remains.
 
-`BotQueryRepository` performs read-only status/settings queries.
+`BotQueryRepository` performs read-only status/settings queries. /status lists
+both registered collectors and their persisted last success, next run and status.
+Missing state is shown as Never / Not scheduled, without making up timestamps.
 `FeedbackRepository.get_saved_jobs_for_user(user_id, limit=10)` selects only
 that user's `saved` feedback, newest update first. Saved-job output is split
 into messages within Telegram's size limit.
@@ -282,7 +339,8 @@ ID is hardcoded. Without an owner ID, admin commands are disabled.
 `CeleryCommandDispatcher` publishes using `asyncio.to_thread`:
 
 ```python
-collect_remoteok.delay()
+for task in COLLECTOR_TASKS.values():
+    task.delay()
 send_daily_digest.delay(user.id, run_now=True)
 ```
 

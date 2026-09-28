@@ -19,6 +19,7 @@ def test_stable_task_registration_and_beat_intervals(app):
         "scheduler.dispatch_collectors",
         "scheduler.dispatch_digests",
         "jobs.collect_remoteok",
+        "jobs.collect_weworkremotely",
         "notifications.send_daily_digest",
     }.issubset(app.tasks)
     schedule = app.conf.beat_schedule
@@ -34,6 +35,7 @@ def test_stable_task_registration_and_beat_intervals(app):
     "module,name,arguments",
     [
         ("jobs", "collect_remoteok", ["2026-09-27T00:00:00+00:00"]),
+        ("jobs", "collect_weworkremotely", ["2026-09-27T00:00:00+00:00"]),
         ("notifications", "send_daily_digest", [17, "2026-09-27"]),
         ("scheduler", "dispatch_collectors", []),
         ("scheduler", "dispatch_digests", []),
@@ -55,3 +57,14 @@ def test_manual_digest_flag_reaches_async_service(app, monkeypatch):
     monkeypatch.setattr(notifications, "send_daily_digest_async", implementation)
     assert notifications.send_daily_digest.run(17, run_now=True) == {"status": "sent"}
     implementation.assert_awaited_once_with(17, None, run_now=True)
+
+
+def test_collector_registries_match_registered_tasks(app):
+    from src.collectors.registry import COLLECTORS
+    from src.services.collector_policy import COLLECTOR_POLICIES
+    from src.tasks.jobs import COLLECTOR_TASKS
+
+    assert set(COLLECTORS) == set(COLLECTOR_POLICIES) == set(COLLECTOR_TASKS)
+    for source, task in COLLECTOR_TASKS.items():
+        assert task.name == COLLECTOR_POLICIES[source].task_name
+        assert task.name in app.tasks

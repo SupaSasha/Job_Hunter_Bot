@@ -127,3 +127,26 @@ async def test_new_job() -> None:
     assert result.reason is None
     assert result.existing_job_id is None
     assert result.fingerprint == DeduplicationService.calculate_fingerprint(build_job())
+
+
+async def test_wwr_matches_remoteok_via_existing_fingerprint():
+    remote = build_job()
+    wwr = build_job(
+        source="weworkremotely",
+        external_id="wwr-guid",
+        url="https://weworkremotely.com/remote-jobs/acme",
+        company="ACME Inc.",
+        title="Python Backend Developer",
+    )
+    repository = AsyncMock(spec=JobRepository)
+    repository.get_by_source_external_id.return_value = None
+    repository.get_by_fingerprint.return_value = JobORM(id=42, source="remoteok")
+    assert DeduplicationService.calculate_fingerprint(
+        remote
+    ) == DeduplicationService.calculate_fingerprint(wwr)
+    result = await DeduplicationService(repository).check(wwr)
+    assert (result.is_duplicate, result.reason, result.existing_job_id) == (
+        True,
+        "fingerprint",
+        42,
+    )

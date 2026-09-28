@@ -1,8 +1,17 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from datetime import datetime
 
 from src.schemas.job import JobDTO
+
+
+class CollectionError(RuntimeError):
+    """Source unavailable or returned an invalid response."""
+
+    def __init__(self, message: str, *, retry_at: datetime | None = None):
+        super().__init__(message)
+        self.retry_at = retry_at
 
 
 class BaseJobCollector(ABC):

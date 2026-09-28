@@ -180,3 +180,51 @@ async def test_active_trial_custom_time_not_yet_due():
     ]
     assert await service.dispatch_digests(NOW) == 0
     service.publish.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "hour,initial,start,day",
+    [
+        (3, True, 4, 27),
+        (5, True, 5, 27),
+        (5, False, 16, 27),
+        (6, False, 16, 27),
+        (18, False, 4, 28),
+    ],
+)
+def test_wwr_windows_and_independent_jitter(hour, initial, start, day):
+    now = datetime(2026, 9, 27, hour, tzinfo=ZoneInfo(ZONE))
+    values = [
+        next_collection(
+            now,
+            COLLECTOR_POLICIES["weworkremotely"],
+            ZONE,
+            initial=initial,
+            rng=random.Random(seed),
+        )
+        for seed in range(10)
+    ]
+    assert len(set(values)) > 1
+    for value in values:
+        local = value.astimezone(ZoneInfo(ZONE))
+        assert local.day == day
+        assert start <= local.hour < (6 if start == 5 else start + 2)
+        assert value.tzinfo == UTC
+
+
+async def test_dispatch_routes_both_collectors_without_future_sources():
+    service = SchedulerService(None, Mock(), ZONE, EntitlementService())
+    service.collectors = AsyncMock()
+    service.collectors.due.return_value = [
+        CollectorStateORM(source=source, next_run_at=NOW)
+        for source in ("remoteok", "weworkremotely", "unknown")
+    ]
+    assert await service.dispatch_collectors(NOW) == 2
+    assert [call.args[0] for call in service.publish.call_args_list] == [
+        "jobs.collect_remoteok",
+        "jobs.collect_weworkremotely",
+    ]
+    assert [call.args[0] for call in service.collectors.ensure.call_args_list] == [
+        "remoteok",
+        "weworkremotely",
+    ]

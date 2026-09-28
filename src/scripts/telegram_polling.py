@@ -19,7 +19,7 @@ from src.services.entitlements import EntitlementService
 from src.services.feedback import FeedbackService
 from src.services.notification_settings import NotificationSettingsService
 from src.services.users import OwnerService
-from src.tasks.jobs import collect_remoteok
+from src.tasks.jobs import COLLECTOR_TASKS
 from src.tasks.notifications import send_daily_digest
 
 logger = logging.getLogger(__name__)
@@ -38,7 +38,9 @@ async def main() -> None:
 
         async with TelegramClient(settings.TELEGRAM_BOT_TOKEN) as client:
             bot_username = await client.get_bot_username()
-            dispatcher = CeleryCommandDispatcher(collect_remoteok, send_daily_digest)
+            dispatcher = CeleryCommandDispatcher(
+                COLLECTOR_TASKS.values(), send_daily_digest
+            )
             entitlements = EntitlementService(
                 free_digest_time=settings.FREE_DIGEST_TIME,
                 free_min_score=settings.FREE_MIN_SCORE,
