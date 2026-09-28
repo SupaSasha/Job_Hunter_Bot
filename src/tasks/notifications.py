@@ -9,7 +9,7 @@ from src.tasks.runtime import task_resources
 
 
 async def send_daily_digest_async(
-    user_id: int, expected_date: str | None = None
+    user_id: int, expected_date: str | None = None, *, run_now: bool = False
 ) -> dict:
     if not settings.TELEGRAM_BOT_TOKEN:
         return {"status": "skipped", "reason": "telegram_not_configured"}
@@ -22,9 +22,11 @@ async def send_daily_digest_async(
                     free_digest_time=settings.FREE_DIGEST_TIME,
                     free_min_score=settings.FREE_MIN_SCORE,
                 ),
-            ).send(user_id, expected_date)
+            ).send(user_id, expected_date, run_now=run_now)
 
 
 @celery_app.task(name="notifications.send_daily_digest")
-def send_daily_digest(user_id: int, expected_date: str | None = None) -> dict:
-    return asyncio.run(send_daily_digest_async(user_id, expected_date))
+def send_daily_digest(
+    user_id: int, expected_date: str | None = None, *, run_now: bool = False
+) -> dict:
+    return asyncio.run(send_daily_digest_async(user_id, expected_date, run_now=run_now))

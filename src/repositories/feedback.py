@@ -2,6 +2,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.feedback import FeedbackORM
+from src.models.job import JobORM
 
 
 class FeedbackRepository:
@@ -35,3 +36,15 @@ class FeedbackRepository:
         if updated is None:
             raise LookupError("Feedback no longer exists")
         return updated
+
+    async def get_saved_jobs_for_user(
+        self, user_id: int, limit: int = 10
+    ) -> list[JobORM]:
+        rows = await self.session.scalars(
+            select(JobORM)
+            .join(FeedbackORM, FeedbackORM.job_id == JobORM.id)
+            .where(FeedbackORM.user_id == user_id, FeedbackORM.feedback_type == "saved")
+            .order_by(FeedbackORM.updated_at.desc(), FeedbackORM.id.desc())
+            .limit(limit)
+        )
+        return list(rows)

@@ -44,4 +44,14 @@ def test_task_is_thin_async_wrapper(app, monkeypatch, module, name, arguments):
     implementation = AsyncMock(return_value={"ok": True})
     monkeypatch.setattr(target, f"{name}_async", implementation)
     assert getattr(target, name).run(*arguments) == {"ok": True}
-    implementation.assert_awaited_once_with(*arguments)
+    kwargs = {"run_now": False} if name == "send_daily_digest" else {}
+    implementation.assert_awaited_once_with(*arguments, **kwargs)
+
+
+def test_manual_digest_flag_reaches_async_service(app, monkeypatch):
+    from src.tasks import notifications
+
+    implementation = AsyncMock(return_value={"status": "sent"})
+    monkeypatch.setattr(notifications, "send_daily_digest_async", implementation)
+    assert notifications.send_daily_digest.run(17, run_now=True) == {"status": "sent"}
+    implementation.assert_awaited_once_with(17, None, run_now=True)

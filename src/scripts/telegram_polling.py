@@ -3,14 +3,22 @@ import logging
 
 from src.bot.callbacks import CallbackHandler
 from src.bot.client import TelegramClient
+from src.bot.commands import CommandHandler
+from src.bot.dispatch import CeleryCommandDispatcher
 from src.bot.polling import poll_updates
+from src.bot.updates import route_update
 from src.config import settings
 from src.db.database import async_session_factory, engine
+from src.repositories.bot_queries import BotQueryRepository
+from src.repositories.feedback import FeedbackRepository
 from src.repositories.jobs import JobRepository
 from src.repositories.scheduling import DeliveryBootstrap
 from src.repositories.users import UserRepository
+from src.services.entitlements import EntitlementService
 from src.services.feedback import FeedbackService
 from src.services.users import OwnerService
+from src.tasks.jobs import collect_remoteok
+from src.tasks.notifications import send_daily_digest
 
 logger = logging.getLogger(__name__)
 
@@ -27,21 +35,35 @@ async def main() -> None:
         await DeliveryBootstrap(async_session_factory, settings).ensure_users()
 
         async with TelegramClient(settings.TELEGRAM_BOT_TOKEN) as client:
+            bot_username = await client.get_bot_username()
+            dispatcher = CeleryCommandDispatcher(collect_remoteok, send_daily_digest)
+            entitlements = EntitlementService(
+                free_digest_time=settings.FREE_DIGEST_TIME,
+                free_min_score=settings.FREE_MIN_SCORE,
+            )
 
             async def handle_update(update: dict) -> None:
-                if "callback_query" not in update:
-                    return
-                # A fresh session for each callback, released before long polling.
+                # A fresh session for each update, released before long polling.
                 async with async_session_factory() as session:
-                    handler = CallbackHandler(
+                    callbacks = CallbackHandler(
                         UserRepository(session),
                         JobRepository(session),
                         FeedbackService(session),
                         client,
                     )
-                    await handler.handle(update["callback_query"])
+                    commands = CommandHandler(
+                        UserRepository(session),
+                        BotQueryRepository(session),
+                        FeedbackRepository(session),
+                        client,
+                        dispatcher,
+                        entitlements,
+                        owner_telegram_id=settings.TELEGRAM_CHAT_ID,
+                        bot_username=bot_username,
+                    )
+                    await route_update(update, commands=commands, callbacks=callbacks)
 
-            logger.info("Telegram callback polling started")
+            logger.info("Telegram command and callback polling started")
             await poll_updates(client, handle_update)
     finally:
         await engine.dispose()

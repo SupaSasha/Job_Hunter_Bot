@@ -57,7 +57,9 @@ class DailyDigestService:
         self.clock = clock
         self.repository = DigestRepository(sessions)
 
-    async def send(self, user_id: int, expected_date: str | None = None) -> dict:
+    async def send(
+        self, user_id: int, expected_date: str | None = None, *, run_now: bool = False
+    ) -> dict:
         now = self.clock()
         users = await self.repository.users(user_id)
         if not users:
@@ -69,7 +71,9 @@ class DailyDigestService:
             expected_date
         ):
             return {"status": "skipped", "reason": "stale_date"}
-        if not digest_due(effective, now, set()):
+        if not effective.digest_enabled:
+            return {"status": "skipped", "reason": "inactive_or_disabled"}
+        if not run_now and not digest_due(effective, now, set()):
             return {"status": "skipped", "reason": "not_due"}
         if self.client is None:
             return {"status": "skipped", "reason": "telegram_not_configured"}

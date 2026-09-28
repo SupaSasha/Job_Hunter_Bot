@@ -98,6 +98,17 @@ class TelegramClient:
             raise TelegramAPIError("Telegram returned an unexpected response")
         return body["result"]
 
+    async def get_bot_username(self) -> str:
+        result = await self._request("getMe", {})
+        if not isinstance(result, dict) or result.get("is_bot") is not True:
+            raise TelegramAPIError("Telegram returned an invalid bot identity")
+        username = result.get("username")
+        if not isinstance(username, str) or not re.fullmatch(
+            r"[A-Za-z0-9_]+", username
+        ):
+            raise TelegramAPIError("Telegram returned an invalid bot username")
+        return username
+
     async def get_updates(
         self, offset: int | None = None, timeout: int = 30
     ) -> list[dict]:
@@ -105,7 +116,7 @@ class TelegramClient:
             raise ValueError("Telegram polling timeout must be a nonnegative integer")
         if offset is not None and type(offset) is not int:
             raise ValueError("Telegram update offset must be an integer")
-        payload = {"timeout": timeout, "allowed_updates": ["callback_query"]}
+        payload = {"timeout": timeout, "allowed_updates": ["message", "callback_query"]}
         if offset is not None:
             payload["offset"] = offset
         result = await self._request(

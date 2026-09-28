@@ -194,3 +194,21 @@ async def test_stale_date_disabled_user_and_missing_token_do_not_reserve(setup):
     assert (await service.send(2))["reason"] == "inactive_or_disabled"
     assert not service.repository.reserved
     client.send_message.assert_not_awaited()
+
+
+async def test_run_now_bypasses_time_but_not_daily_reservation(setup):
+    service, client, _ = setup
+    service.clock = lambda: datetime(2026, 9, 27, 10, tzinfo=UTC)
+    assert (await service.send(2))["reason"] == "not_due"
+    assert not service.repository.reserved
+    assert (await service.send(2, run_now=True))["status"] == "sent"
+    assert (await service.send(2, run_now=True))["reason"] == "already_attempted_today"
+    client.send_message.assert_awaited_once()
+
+
+async def test_run_now_does_not_enable_disabled_delivery(setup):
+    service, client, _ = setup
+    service.repository.rows[0][1].digest_enabled = False
+    assert (await service.send(2, run_now=True))["reason"] == "inactive_or_disabled"
+    assert not service.repository.reserved
+    client.send_message.assert_not_awaited()

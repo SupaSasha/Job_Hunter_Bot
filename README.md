@@ -240,6 +240,84 @@ Do not delete real daily reservations to repeat a test. Use fake repositories
 in unit tests for repeated scenarios. Temporarily expire trial to inspect
 effective defaults, then restore it; no need to wait seven days.
 
+## Telegram commands
+
+Commands are handled in private chats. Public `/start` and `/help` do not register
+arbitrary users. Startup reuses `OwnerService.get_or_create` for the configured
+owner and initializes missing delivery settings through the existing bootstrap.
+Data commands require an existing active user. Groups and mismatched sender/chat
+IDs receive `This command is not available.` without exposing account data.
+
+| Command | Behavior |
+| --- | --- |
+| /start | Show the introduction |
+| /help | List all seven commands |
+| /status | Read collector state, total jobs, effective digest settings and the user's latest digest attempt from PostgreSQL |
+| /saved | Show up to ten most recently saved jobs, without descriptions |
+| /filters | Show the current shared filter profile and effective digest time/minimum score |
+| /collect | Owner only: enqueue Remote OK collection |
+| /digest | Owner only: enqueue today's digest immediately |
+
+`CommandHandler(...).handle(message)` in `src/bot/commands.py` handles commands.
+It receives repositories, TelegramClient, a dispatcher, EntitlementService,
+the configured owner Telegram ID, the bot username and an injectable clock.
+`route_update(update, commands=..., callbacks=...)` keeps command handling
+separate from existing callback parsing. Plain messages and edited messages
+are ignored. Commands support a matching `@BotUsername` suffix and ignore commands
+addressed to other bots. The username is obtained once at startup using
+[getMe](https://core.telegram.org/bots/api#getme).
+[getUpdates](https://core.telegram.org/bots/api#getupdates) now requests both
+`message` and `callback_query` updates. Existing offset and callback behavior remains.
+
+`BotQueryRepository` performs read-only status/settings queries.
+`FeedbackRepository.get_saved_jobs_for_user(user_id, limit=10)` selects only
+that user's `saved` feedback, newest update first. Saved-job output is split
+into messages within Telegram's size limit.
+Unknown commands reply: `Unknown command. Use /help to see available commands.`
+
+Admin permission checks compare the verified message sender against
+`TELEGRAM_CHAT_ID` and also require an active persisted user. No numeric owner
+ID is hardcoded. Without an owner ID, admin commands are disabled.
+`CeleryCommandDispatcher` publishes using `asyncio.to_thread`:
+
+```python
+collect_remoteok.delay()
+send_daily_digest.delay(user.id, run_now=True)
+```
+
+Handlers wait only for publication, never for task completion. Successful
+publication replies `Collection started.` or `Digest started.`; publication
+errors produce `Failed to start collection.` or `Failed to start digest.`.
+These acknowledgements do not imply the worker has completed the job.
+Replies use plain text. Logs record command categories and sanitized error types,
+not raw command arguments or Telegram secrets. A reply timeout is logged without
+replaying a task that may already have been queued.
+
+Manual `run_now=True` bypasses only the local scheduled-time check. It preserves
+active/enabled-user checks, effective filters and threshold, individual delivery
+reservations and the one-attempt-per-local-day constraint. Therefore `/digest`
+can acknowledge dispatch without sending cards if today was already attempted,
+delivery is disabled, or no matching jobs remain. `/status` displays the latest
+attempt status, including `empty`, `partial`, `failed` or `pending`.
+
+To check manually, start worker, Beat and polling using the commands above, then
+send `/start`, `/help`, `/status`, `/saved` and `/filters` in the owner's
+private chat. With the worker running, try `/collect` and `/digest`.
+Use a different account to confirm admin commands are denied.
+Unit tests use fake clients and dispatchers, never real Telegram or Celery workers.
+
+BotFather command menu (configure manually; the application does not change it):
+
+```text
+start - About the bot
+help - Show available commands
+status - Bot and collector status
+saved - Saved jobs
+filters - Current job filters
+collect - Run collection now
+digest - Send digest now
+```
+
 ## Feedback
 
 Job cards keep `Save` and `Not suitable` buttons, handled by the independent

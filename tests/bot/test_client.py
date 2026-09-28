@@ -89,9 +89,11 @@ async def test_network_errors_do_not_expose_request_url(error_class) -> None:
 
 
 @pytest.mark.parametrize("offset", [None, 123])
-async def test_get_updates_has_long_http_timeout_and_callback_filter(offset) -> None:
+async def test_get_updates_has_long_http_timeout_and_command_callback_filters(
+    offset,
+) -> None:
     def handler(request):
-        expected = {"timeout": 30, "allowed_updates": ["callback_query"]}
+        expected = {"timeout": 30, "allowed_updates": ["message", "callback_query"]}
         if offset is not None:
             expected["offset"] = offset
         assert json.loads(request.content) == expected
@@ -158,3 +160,44 @@ async def test_new_api_methods_redact_network_errors(method, caplog) -> None:
                     await client.answer_callback_query("query-1")
     assert TOKEN not in "".join(traceback.format_exception(caught.value))
     assert TOKEN not in caplog.text
+
+
+async def test_get_bot_username_uses_get_me():
+    def handler(request):
+        assert request.url.path.endswith("/getMe")
+        assert json.loads(request.content) == {}
+        return httpx.Response(
+            200,
+            json={
+                "ok": True,
+                "result": {
+                    "is_bot": True,
+                    "username": "ExampleBot",
+                },
+            },
+        )
+
+    async with TelegramClient(TOKEN, transport=httpx.MockTransport(handler)) as client:
+        assert await client.get_bot_username() == "ExampleBot"
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        None,
+        {},
+        {"is_bot": False, "username": "Bot"},
+        {"is_bot": True},
+        {"is_bot": True, "username": ""},
+        {"is_bot": True, "username": "not a username"},
+    ],
+)
+async def test_get_bot_username_rejects_invalid_identity(result):
+    async with TelegramClient(
+        TOKEN,
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, json={"ok": True, "result": result})
+        ),
+    ) as client:
+        with pytest.raises(TelegramAPIError):
+            await client.get_bot_username()
