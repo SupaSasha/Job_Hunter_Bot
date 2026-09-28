@@ -7,6 +7,7 @@ import pytest
 from src.bot.client import TelegramAPIError, TelegramClient
 from src.bot.commands import HELP, WELCOME, CommandHandler, parse_command
 from src.bot.dispatch import CommandDispatcher
+from src.bot.settings import SettingsHandler
 from src.models.job import JobORM
 from src.models.scheduling import (
     CollectorStateORM,
@@ -87,7 +88,16 @@ async def test_public_commands(handler, command, text):
 
 async def test_help_lists_all_commands(handler):
     await handler.handle(message("/help"))
-    for command in ("start", "help", "status", "saved", "filters", "collect", "digest"):
+    for command in (
+        "start",
+        "help",
+        "status",
+        "saved",
+        "filters",
+        "settings",
+        "collect",
+        "digest",
+    ):
         assert f"/{command} - " in reply(handler)
 
 
@@ -240,7 +250,9 @@ async def test_non_owner_cannot_dispatch(handler, command, owner):
     handler.users.get_by_telegram_id.assert_not_awaited()
 
 
-@pytest.mark.parametrize("command", ["status", "saved", "filters", "collect", "digest"])
+@pytest.mark.parametrize(
+    "command", ["status", "saved", "filters", "settings", "collect", "digest"]
+)
 @pytest.mark.parametrize("missing", [True, False])
 async def test_unknown_or_inactive_user_cannot_access_data(handler, command, missing):
     handler.users.get_by_telegram_id.return_value = (
@@ -254,7 +266,9 @@ async def test_unknown_or_inactive_user_cannot_access_data(handler, command, mis
     handler.dispatcher.digest.assert_not_awaited()
 
 
-@pytest.mark.parametrize("command", ["collect", "digest", "status", "saved", "filters"])
+@pytest.mark.parametrize(
+    "command", ["collect", "digest", "status", "saved", "filters", "settings"]
+)
 async def test_group_or_mismatched_chat_cannot_leak_owner_data(handler, command):
     await handler.handle(message(f"/{command}", chat_id=-42, chat_type="group"))
     assert reply(handler) == "This command is not available."
@@ -323,3 +337,16 @@ def test_command_parsing(text, expected):
 async def test_invalid_or_unaddressed_message_is_ignored(handler, payload):
     await handler.handle(payload)
     handler.client.send_message.assert_not_awaited()
+
+
+async def test_settings_available_to_registered_non_owner(handler):
+    handler.settings_handler = AsyncMock(spec=SettingsHandler)
+    await handler.handle(message("/settings", sender_id=999))
+    handler.settings_handler.show.assert_awaited_once_with(7, 999)
+
+
+async def test_public_help_hides_admin_commands(handler):
+    await handler.handle(message("/help", sender_id=999))
+    assert "/settings - " in reply(handler)
+    assert "/collect" not in reply(handler)
+    assert "/digest" not in reply(handler)

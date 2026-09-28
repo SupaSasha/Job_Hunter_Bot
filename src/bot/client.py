@@ -67,6 +67,24 @@ class TelegramClient:
             raise TelegramAPIError("Telegram response has no valid message_id")
         return message_id
 
+    async def edit_message_text(
+        self,
+        chat_id: int,
+        message_id: int,
+        text: str,
+        reply_markup: dict | None = None,
+    ) -> None:
+        payload = {"chat_id": chat_id, "message_id": message_id, "text": text}
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
+        result = await self._request("editMessageText", payload)
+        if (
+            not isinstance(result, dict)
+            or type(result.get("message_id")) is not int
+            or result["message_id"] != message_id
+        ):
+            raise TelegramAPIError("Telegram returned an invalid edited message")
+
     async def _request(
         self, method: str, payload: dict, *, read_timeout: float | None = None
     ) -> object:
@@ -82,6 +100,20 @@ class TelegramClient:
         except httpx.RequestError:
             raise TelegramAPIError("Telegram network error") from None
 
+        if method == "editMessageText" and response.status_code == 400:
+            try:
+                error = response.json()
+            except ValueError:
+                error = None
+            if (
+                isinstance(error, dict)
+                and error.get("ok") is False
+                and error.get("error_code") == 400
+                and str(error.get("description", "")).startswith(
+                    "Bad Request: message is not modified"
+                )
+            ):
+                return {"message_id": payload["message_id"]}
         if not response.is_success:
             raise TelegramAPIError(f"Telegram HTTP error: {response.status_code}")
         try:

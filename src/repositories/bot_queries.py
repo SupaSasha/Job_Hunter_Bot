@@ -33,7 +33,9 @@ class BotQueryRepository:
 
     async def subscription(self, user_id: int) -> UserSubscriptionORM | None:
         return await self.session.scalar(
-            select(UserSubscriptionORM).where(UserSubscriptionORM.user_id == user_id)
+            select(UserSubscriptionORM)
+            .where(UserSubscriptionORM.user_id == user_id)
+            .execution_options(populate_existing=True)
         )
 
     async def last_digest(self, user_id: int) -> DigestRunORM | None:

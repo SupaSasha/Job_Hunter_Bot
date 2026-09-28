@@ -3,9 +3,10 @@ import logging
 
 from src.bot.callbacks import CallbackHandler
 from src.bot.client import TelegramClient
-from src.bot.commands import CommandHandler
+from src.bot.commands import HELP, CommandHandler
 from src.bot.dispatch import CeleryCommandDispatcher
 from src.bot.polling import poll_updates
+from src.bot.settings import SettingsHandler
 from src.bot.updates import route_update
 from src.config import settings
 from src.db.database import async_session_factory, engine
@@ -16,6 +17,7 @@ from src.repositories.scheduling import DeliveryBootstrap
 from src.repositories.users import UserRepository
 from src.services.entitlements import EntitlementService
 from src.services.feedback import FeedbackService
+from src.services.notification_settings import NotificationSettingsService
 from src.services.users import OwnerService
 from src.tasks.jobs import collect_remoteok
 from src.tasks.notifications import send_daily_digest
@@ -51,6 +53,12 @@ async def main() -> None:
                         FeedbackService(session),
                         client,
                     )
+                    settings_handler = SettingsHandler(
+                        UserRepository(session),
+                        NotificationSettingsService(session, entitlements),
+                        client,
+                        help_text=HELP,
+                    )
                     commands = CommandHandler(
                         UserRepository(session),
                         BotQueryRepository(session),
@@ -60,8 +68,14 @@ async def main() -> None:
                         entitlements,
                         owner_telegram_id=settings.TELEGRAM_CHAT_ID,
                         bot_username=bot_username,
+                        settings_handler=settings_handler,
                     )
-                    await route_update(update, commands=commands, callbacks=callbacks)
+                    await route_update(
+                        update,
+                        commands=commands,
+                        callbacks=callbacks,
+                        settings=settings_handler,
+                    )
 
             logger.info("Telegram command and callback polling started")
             await poll_updates(client, handle_update)

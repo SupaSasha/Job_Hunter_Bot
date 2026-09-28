@@ -36,6 +36,15 @@ class EntitlementService:
             )
         return False
 
+    def plan(
+        self, subscription: UserSubscriptionORM | None, now: datetime
+    ) -> tuple[str, datetime | None]:
+        if not self.is_premium(subscription, now):
+            return "Free", None
+        if subscription.status == "trial":
+            return "Trial", subscription.trial_ends_at
+        return "Premium", None
+
     def effective(
         self,
         preferences: UserNotificationSettingsORM,

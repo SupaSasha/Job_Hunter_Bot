@@ -38,3 +38,33 @@ async def test_unrelated_updates_are_ignored(update):
     await route_update(update, commands=commands, callbacks=callbacks)
     commands.handle.assert_not_awaited()
     callbacks.handle.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "data", ["settings:back", "settings:foobar", "tz:UTC", "time:0800", "score:80"]
+)
+async def test_settings_callbacks_have_separate_route(data):
+    commands, callbacks, settings = AsyncMock(), AsyncMock(), AsyncMock()
+    payload = {"data": data}
+    await route_update(
+        {"callback_query": payload},
+        commands=commands,
+        callbacks=callbacks,
+        settings=settings,
+    )
+    settings.handle.assert_awaited_once_with(payload)
+    callbacks.handle.assert_not_awaited()
+
+
+@pytest.mark.parametrize("data", ["save:42", "reject:42"])
+async def test_feedback_keeps_route_with_settings_enabled(data):
+    commands, callbacks, settings = AsyncMock(), AsyncMock(), AsyncMock()
+    payload = {"data": data}
+    await route_update(
+        {"callback_query": payload},
+        commands=commands,
+        callbacks=callbacks,
+        settings=settings,
+    )
+    callbacks.handle.assert_awaited_once_with(payload)
+    settings.handle.assert_not_awaited()

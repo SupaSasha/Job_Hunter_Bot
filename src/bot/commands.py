@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 from src.bot.client import TelegramAPIError, TelegramClient
 from src.bot.dispatch import CommandDispatcher
 from src.bot.formatter import _truncate
+from src.bot.settings import SettingsHandler
 from src.repositories.bot_queries import BotQueryRepository
 from src.repositories.feedback import FeedbackRepository
 from src.repositories.users import UserRepository
@@ -27,12 +28,25 @@ HELP = (
     "/status - Show bot and collector status\n"
     "/saved - Show saved jobs\n"
     "/filters - Show current filters\n"
+    "/settings - Notification settings"
+)
+ADMIN_HELP = (
+    "\n\nAdmin commands:\n"
     "/collect - Run job collection now\n"
     "/digest - Send today's digest now"
 )
 UNAVAILABLE = "This command is not available."
 UNKNOWN = "Unknown command. Use /help to see available commands."
-COMMANDS = {"start", "help", "status", "saved", "filters", "collect", "digest"}
+COMMANDS = {
+    "start",
+    "help",
+    "status",
+    "saved",
+    "filters",
+    "settings",
+    "collect",
+    "digest",
+}
 
 
 def parse_command(text: object, bot_username: str) -> str | None:
@@ -112,8 +126,10 @@ class CommandHandler:
         *,
         owner_telegram_id: int | None,
         bot_username: str,
+        settings_handler: SettingsHandler | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ):
+        self.settings_handler = settings_handler
         self.users = users
         self.queries = queries
         self.feedback = feedback
@@ -208,7 +224,10 @@ class CommandHandler:
             await self._reply(chat_id, UNAVAILABLE)
             return
         if command in {"start", "help"}:
-            await self._reply(chat_id, WELCOME if command == "start" else HELP)
+            help_text = HELP + (
+                ADMIN_HELP if sender_id == self.owner_telegram_id else ""
+            )
+            await self._reply(chat_id, WELCOME if command == "start" else help_text)
             return
         if command not in COMMANDS:
             logger.info("Unknown command")
@@ -229,6 +248,13 @@ class CommandHandler:
             return
         if admin:
             await self._admin(command, user.id, chat_id)
+        elif command == "settings":
+            if self.settings_handler is not None:
+                await self.settings_handler.show(user.id, chat_id)
+            else:
+                await self._reply(
+                    chat_id, "Notification settings are not available yet."
+                )
         elif command == "status":
             await self._reply(chat_id, await self._status(user.id))
         elif command == "saved":

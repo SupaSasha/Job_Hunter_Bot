@@ -201,3 +201,71 @@ async def test_get_bot_username_rejects_invalid_identity(result):
     ) as client:
         with pytest.raises(TelegramAPIError):
             await client.get_bot_username()
+
+
+async def test_edit_message_payload():
+    markup = {"inline_keyboard": []}
+
+    def handler(request):
+        assert request.url.path.endswith("/editMessageText")
+        assert json.loads(request.content) == {
+            "chat_id": 123,
+            "message_id": 42,
+            "text": "Settings",
+            "reply_markup": markup,
+        }
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": 42}})
+
+    async with TelegramClient(TOKEN, transport=httpx.MockTransport(handler)) as client:
+        await client.edit_message_text(123, 42, "Settings", markup)
+
+
+@pytest.mark.parametrize(
+    "description,accepted",
+    [
+        (
+            "Bad Request: message is not modified: "
+            "specified new message content is the same",
+            True,
+        ),
+        ("Bad Request: message to edit not found", False),
+        ("Bad Request: chat not found", False),
+    ],
+)
+async def test_edit_only_ignores_unchanged_message(description, accepted):
+    def handler(request):
+        return httpx.Response(
+            400, json={"ok": False, "error_code": 400, "description": description}
+        )
+
+    async with TelegramClient(TOKEN, transport=httpx.MockTransport(handler)) as client:
+        if accepted:
+            await client.edit_message_text(123, 42, "Settings")
+        else:
+            with pytest.raises(TelegramAPIError, match="HTTP error: 400"):
+                await client.edit_message_text(123, 42, "Settings")
+
+
+@pytest.mark.parametrize("result", [True, None, {}, {"message_id": 43}])
+async def test_edit_rejects_invalid_response(result):
+    async with TelegramClient(
+        TOKEN,
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, json={"ok": True, "result": result})
+        ),
+    ) as client:
+        with pytest.raises(TelegramAPIError, match="invalid edited message"):
+            await client.edit_message_text(123, 42, "Settings")
+
+
+async def test_edit_rejects_boolean_message_id():
+    async with TelegramClient(
+        TOKEN,
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                200, json={"ok": True, "result": {"message_id": True}}
+            )
+        ),
+    ) as client:
+        with pytest.raises(TelegramAPIError, match="invalid edited message"):
+            await client.edit_message_text(123, 1, "Settings")
