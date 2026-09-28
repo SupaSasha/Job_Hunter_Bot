@@ -20,6 +20,12 @@ COLLECTOR_POLICIES = {
         ((time(2), time(4)), (time(10), time(12)), (time(18), time(20))),
         display_name="Remote OK",
     ),
+    "getonboard": CollectorPolicy(
+        "getonboard",
+        "jobs.collect_getonboard",
+        ((time(6), time(8)), (time(20), time(22))),
+        display_name="Get on Board",
+    ),
     "weworkremotely": CollectorPolicy(
         "weworkremotely",
         "jobs.collect_weworkremotely",
@@ -58,3 +64,8 @@ def next_collection(
             seconds = max(1, int((end - start).total_seconds()))
             return start + timedelta(seconds=chooser.randrange(seconds))
     raise ValueError("Policy has no future window")
+
+
+def source_display_name(source: str) -> str:
+    policy = COLLECTOR_POLICIES.get(source)
+    return policy.display_name if policy else source

@@ -4,54 +4,16 @@ import logging
 import re
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
-from html.parser import HTMLParser
 from urllib.parse import urlsplit, urlunsplit
 from xml.etree import ElementTree as ET
 
 import httpx
 
 from src.collectors.base import BaseJobCollector, CollectionError
+from src.collectors.text import html_to_text
 from src.schemas.job import JobDTO
 
 logger = logging.getLogger(__name__)
-
-
-class _DescriptionText(HTMLParser):
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self.parts = []
-        self.hidden = 0
-
-    def handle_starttag(self, tag, attrs):
-        if tag in {"script", "style"}:
-            self.hidden += 1
-        if tag in {"p", "div", "br", "li", "h1", "h2", "h3", "ul", "ol"}:
-            self.parts.append("\n")
-
-    def handle_endtag(self, tag):
-        if tag in {"script", "style"}:
-            self.hidden = max(0, self.hidden - 1)
-        if tag in {"p", "div", "li", "h1", "h2", "h3", "ul", "ol"}:
-            self.parts.append("\n")
-
-    def handle_data(self, data):
-        if not self.hidden:
-            self.parts.append(data)
-
-
-def _description(value: str | None) -> str | None:
-    if not value:
-        return None
-    parser = _DescriptionText()
-    parser.feed(value)
-    return (
-        "\n".join(
-            line
-            for raw in "".join(parser.parts).splitlines()
-            if (line := " ".join(raw.split()))
-        )
-        or None
-    )
 
 
 def _date(value: str | None) -> datetime | None:
@@ -172,7 +134,7 @@ def parse_job_item(item: ET.Element, *, collected_at: datetime | None = None) ->
         external_id=external_id,
         title=title.strip(),
         company=company.strip() or None,
-        description=_description(field("description")),
+        description=html_to_text(field("description")),
         url=url,
         location=", ".join(countries) if countries else region or None,
         remote=True,

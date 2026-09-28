@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import pytest
+
 from src.schemas.job import JobDTO
 from src.services.normalization import NormalizationService
 
@@ -80,3 +82,15 @@ def test_normalization_service_normalizes_location_and_company_and_timezone() ->
     assert normalized.timezone_text == "GMT-3"
     assert normalized.timezone_min_utc_offset == -3
     assert normalized.timezone_max_utc_offset == -3
+
+
+@pytest.mark.parametrize("name", ["Semi Senior", "Semi-Senior", "semi_senior"])
+def test_semi_senior_alias(name):
+    job = JobDTO(
+        source="getonboard",
+        external_id="1",
+        title="Engineer",
+        url="https://example.com/job",
+        experience_level=name,
+    )
+    assert NormalizationService().normalize(job).experience_level == "middle"

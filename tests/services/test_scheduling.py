@@ -217,14 +217,39 @@ async def test_dispatch_routes_both_collectors_without_future_sources():
     service.collectors = AsyncMock()
     service.collectors.due.return_value = [
         CollectorStateORM(source=source, next_run_at=NOW)
-        for source in ("remoteok", "weworkremotely", "unknown")
+        for source in ("remoteok", "weworkremotely", "getonboard", "unknown")
     ]
-    assert await service.dispatch_collectors(NOW) == 2
+    assert await service.dispatch_collectors(NOW) == 3
     assert [call.args[0] for call in service.publish.call_args_list] == [
         "jobs.collect_remoteok",
         "jobs.collect_weworkremotely",
+        "jobs.collect_getonboard",
     ]
     assert [call.args[0] for call in service.collectors.ensure.call_args_list] == [
         "remoteok",
+        "getonboard",
         "weworkremotely",
     ]
+
+
+@pytest.mark.parametrize(
+    "hour,initial,start,day",
+    [(5, True, 6, 27), (7, True, 7, 27), (7, False, 20, 27), (22, False, 6, 28)],
+)
+def test_getonboard_windows(hour, initial, start, day):
+    now = datetime(2026, 9, 27, hour, tzinfo=ZoneInfo(ZONE))
+    values = {
+        next_collection(
+            now,
+            COLLECTOR_POLICIES["getonboard"],
+            ZONE,
+            initial=initial,
+            rng=random.Random(seed),
+        )
+        for seed in range(10)
+    }
+    assert len(values) > 1
+    for value in values:
+        local = value.astimezone(ZoneInfo(ZONE))
+        assert local.day == day
+        assert start <= local.hour < (8 if start == 7 else start + 2)

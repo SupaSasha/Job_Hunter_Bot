@@ -140,7 +140,15 @@ async def test_source_locks_are_independent():
     async with collector_lock(redis, "remoteok") as first:
         async with collector_lock(redis, "remoteok") as duplicate:
             async with collector_lock(redis, "weworkremotely") as second:
-                assert first and second and not duplicate
+                async with collector_lock(redis, "getonboard") as third:
+                    async with collector_lock(redis, "getonboard") as repeated:
+                        assert (
+                            first
+                            and second
+                            and third
+                            and not duplicate
+                            and not repeated
+                        )
     assert held == set()
 
 
@@ -162,3 +170,24 @@ async def test_invalid_source_never_acquires_lock(setup):
     with pytest.raises(ValueError):
         await service.collect("future-source")
     redis.lock.assert_not_called()
+
+
+async def test_getonboard_uses_own_state_and_existing_pipeline(setup, monkeypatch):
+    from zoneinfo import ZoneInfo
+
+    from src.collectors.registry import COLLECTORS
+
+    service, redis, collector, now = setup
+    monkeypatch.setitem(COLLECTORS, "getonboard", lambda: collector)
+    assert await service.collect("getonboard") == dict(
+        received=0, new=0, duplicates=0, failed=0
+    )
+    service.states.ensure.assert_awaited_once_with(
+        "getonboard", now, "America/Montevideo"
+    )
+    assert service.states.update.call_args.args == ("getonboard",)
+    assert redis.lock.call_args.args == ("collector:getonboard:lock",)
+    local = service.states.update.call_args.kwargs["next_run_at"].astimezone(
+        ZoneInfo("America/Montevideo")
+    )
+    assert 6 <= local.hour < 8

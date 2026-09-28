@@ -2,6 +2,7 @@ from urllib.parse import urlsplit
 
 from src.schemas.job import JobDTO
 from src.schemas.scoring import ScoreResult
+from src.services.collector_policy import source_display_name
 
 _TECHNOLOGIES = {
     "python": "🐍 Python",
@@ -67,7 +68,7 @@ def format_job_message(job: JobDTO, score: ScoreResult) -> str:
         f"💰 {_salary(job)}\n🌎 {_truncate(location, 300)}\n🕐 {employment}",
         _truncate(technologies, 600),
         f"Experience: {job.experience_level or 'not specified'}\n"
-        f"Source: {'Remote OK' if job.source == 'remoteok' else job.source}",
+        f"Source: {source_display_name(job.source)}",
     ]
     for title, items, icon in (
         ("Matches", score.matched_rules, "✅"),

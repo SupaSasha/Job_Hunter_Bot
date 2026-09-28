@@ -107,3 +107,16 @@ def test_invalid_callback_id(job_id: int) -> None:
 def test_invalid_url() -> None:
     with pytest.raises(ValueError, match="HTTP"):
         build_job_keyboard(1, "javascript:alert(1)")
+
+
+@pytest.mark.parametrize(
+    "source,label",
+    [
+        ("remoteok", "Remote OK"),
+        ("weworkremotely", "We Work Remotely"),
+        ("getonboard", "Get on Board"),
+    ],
+)
+def test_shared_source_display_names(job, source, label):
+    job.source = source
+    assert f"Source: {label}" in format_job_message(job, ScoreResult(score=70))

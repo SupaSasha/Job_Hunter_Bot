@@ -20,6 +20,7 @@ def test_stable_task_registration_and_beat_intervals(app):
         "scheduler.dispatch_digests",
         "jobs.collect_remoteok",
         "jobs.collect_weworkremotely",
+        "jobs.collect_getonboard",
         "notifications.send_daily_digest",
     }.issubset(app.tasks)
     schedule = app.conf.beat_schedule
@@ -36,6 +37,7 @@ def test_stable_task_registration_and_beat_intervals(app):
     [
         ("jobs", "collect_remoteok", ["2026-09-27T00:00:00+00:00"]),
         ("jobs", "collect_weworkremotely", ["2026-09-27T00:00:00+00:00"]),
+        ("jobs", "collect_getonboard", ["2026-09-27T00:00:00+00:00"]),
         ("notifications", "send_daily_digest", [17, "2026-09-27"]),
         ("scheduler", "dispatch_collectors", []),
         ("scheduler", "dispatch_digests", []),

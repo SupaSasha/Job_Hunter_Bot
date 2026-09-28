@@ -1,6 +1,6 @@
 # Job Hunter Bot
 
-FastAPI foundation, Remote OK and We Work Remotely collection, and a Telegram daily job digest.
+FastAPI foundation, Remote OK, We Work Remotely and Get on Board collection, and a Telegram daily job digest.
 PostgreSQL and Redis run in Docker; Python processes run locally through Poetry.
 
 All application messages, source comments, documentation and tests are written in English.
@@ -78,7 +78,7 @@ accepted for compatibility but no longer control collection or digest delivery.
 
 ## Collection
 
-`RemoteOKCollector / WeWorkRemotelyCollector -> JobDTO -> NormalizationService -> JobSaveService (DeduplicationService) -> PostgreSQL`.
+`RemoteOKCollector / WeWorkRemotelyCollector / GetOnBoardCollector -> JobDTO -> NormalizationService -> JobSaveService (DeduplicationService) -> PostgreSQL`.
 No filtering, scoring or Telegram delivery runs in collection.
 
 `JobPipeline(save_service).run(jobs)` returns
@@ -95,6 +95,7 @@ Manual collection, even without Telegram credentials:
 ```bash
 poetry run python -m src.scripts.collect_remoteok
 poetry run python -m src.scripts.collect_weworkremotely
+poetry run python -m src.scripts.collect_getonboard
 ```
 
 Or enqueue a worker task:
@@ -110,6 +111,7 @@ Registered sources use separate local windows in SCHEDULER_TIMEZONE
 | --- | --- | --- | --- |
 | remoteok | 02:00–04:00, 10:00–12:00, 18:00–20:00 | jobs.collect_remoteok | collector:remoteok:lock |
 | weworkremotely | 04:00–06:00, 16:00–18:00 | jobs.collect_weworkremotely | collector:weworkremotely:lock |
+| getonboard | 06:00–08:00, 20:00–22:00 | jobs.collect_getonboard | collector:getonboard:lock |
 
 The small collector, policy and task registries contain only implemented sources.
 On first dispatch, the missing state is initialized in the nearest window
@@ -121,7 +123,7 @@ Ordinary dispatcher ticks and restarts reuse that value; imports never run HTTP.
 A dispatcher polls the database every 15 minutes. Thus actual collection can
 start up to about 15 minutes after the selected timestamp, plus queue delay.
 A retry after failure/partial collection is scheduled one hour later; retries
-can occur outside regular windows. WWR HTTP 429 Retry-After can extend this delay.
+can occur outside regular windows. WWR and Get on Board HTTP 429 Retry-After can extend this delay.
 There is no automatic immediate retry loop.
 
 The per-source Redis lock uses a token-checked Lua release and a 660-second TTL.
@@ -186,6 +188,57 @@ its unchanged filters, thresholds and delivery reservations.
 See [the WWR stage report](docs/weworkremotely-stage-report.md) for live counts,
 deduplication examples, test results and Git state.
 
+## Get on Board
+
+Get on Board provides an [official public API without authentication](https://www.getonbrd.com/user-manual/get-on-board-s-api).
+The collector reads the documented programming category endpoint:
+https://www.getonbrd.com/api/v0/categories/programming/jobs.
+The [OpenAPI reference](https://www.getonbrd.com/api-doc.html) documents public
+category resources, pagination and expanded relationships.
+
+GetOnBoardCollector(timeout=20, max_pages=2, per_page=50).collect() returns
+list[JobDTO]. parse_job(raw, collected_at=...) and parse_page(payload) separate
+mapping from HTTP. The default scope is the first two Programming pages, at most
+100 records before repeated-ID deduplication. This does not cover every category
+or guarantee all recently posted jobs: the API has no documented chronological
+ordering/cursor contract for this endpoint. No date cutoff is assumed. Configuration
+is bounded to 1..5 pages and 1..120 records/page; pages are requested sequentially,
+with a one-second pause between them. Empty, last, short (without metadata), and
+repeated pages stop traversal. A later-page HTTP failure fails the whole fetch.
+
+Expanded company, tags, modality, seniority, location_regions, location_tenants
+and location_cities avoid individual job detail requests. Source id becomes
+external_id; links.public_url remains the application destination. Description
+sections use the shared HTML-to-text helper also used by WWR. No new dependency
+or browser automation is involved.
+
+Remote status requires an explicit true flag; hybrid, on-site and temporarily
+remote modalities remain nonremote for this delivery profile. Remote is not a
+region. Expanded regions/countries supply eligibility, and unrestricted
+fully_remote records without restrictions map to Worldwide. Company headquarters
+are not used. NormalizationService retains responsibility for canonical region,
+technology and timezone values; its general Semi Senior aliases now map to middle.
+There are no source-specific filtering or scoring rules.
+
+Numeric min_salary/max_salary are preserved without currency conversion. Currency
+and period remain unknown unless explicitly supplied; the checked public response
+omits both. remote_zone is preserved as timezone_text when present; timezone is
+never guessed from a country or prose. Published epoch timestamps and collection
+timestamps are UTC-aware. Unknown optional fields stay None or empty.
+
+Standalone source check, without DB writes:
+
+```bash
+poetry run python -m src.collectors.getonboard
+```
+
+The persistence script above uses the existing CollectionService, source lock,
+CollectorState and JobPipeline. Jobs enter the shared jobs table and existing
+daily digest; collection sends no messages. /collect publishes three independent
+tasks, /status displays all three states, and job cards use the shared source
+name helper to display Get on Board. See [the stage report](docs/getonboard-stage-report.md)
+for real collection counts, LATAM observations and verification results.
+
 ## Daily delivery
 
 Beat tasks:
@@ -196,6 +249,7 @@ Beat tasks:
 | scheduler.dispatch_digests | 5 minutes |
 | jobs.collect_remoteok | Due Remote OK collector or manual task |
 | jobs.collect_weworkremotely | Due WWR collector or manual task |
+| jobs.collect_getonboard | Due Get on Board collector or manual task |
 | notifications.send_daily_digest | Due user or manual task |
 
 Tasks are thin `asyncio.run` wrappers. Every invocation creates and disposes its
@@ -311,7 +365,7 @@ IDs receive `This command is not available.` without exposing account data.
 | /saved | Show up to ten most recently saved jobs, without descriptions |
 | /filters | Show the current shared filter profile and effective digest time/minimum score |
 | /settings | View effective settings and edit timezone, digest time and score |
-| /collect | Owner only: enqueue both Remote OK and We Work Remotely collection |
+| /collect | Owner only: enqueue both Remote OK, We Work Remotely and Get on Board collection |
 | /digest | Owner only: enqueue today's digest immediately |
 
 `CommandHandler(...).handle(message)` in `src/bot/commands.py` handles commands.
@@ -326,7 +380,7 @@ addressed to other bots. The username is obtained once at startup using
 `message` and `callback_query` updates. Existing offset and callback behavior remains.
 
 `BotQueryRepository` performs read-only status/settings queries. /status lists
-both registered collectors and their persisted last success, next run and status.
+all three registered collectors and their persisted last success, next run and status.
 Missing state is shown as Never / Not scheduled, without making up timestamps.
 `FeedbackRepository.get_saved_jobs_for_user(user_id, limit=10)` selects only
 that user's `saved` feedback, newest update first. Saved-job output is split

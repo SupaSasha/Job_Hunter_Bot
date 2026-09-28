@@ -30,7 +30,20 @@ def collect_weworkremotely(expected_next_run: str | None = None) -> dict:
     return asyncio.run(collect_weworkremotely_async(expected_next_run))
 
 
+async def collect_getonboard_async(expected_next_run: str | None = None) -> dict:
+    async with task_resources() as (sessions, redis):
+        return await CollectionService(
+            sessions, redis, settings.SCHEDULER_TIMEZONE
+        ).collect("getonboard", expected_next_run)
+
+
+@celery_app.task(name="jobs.collect_getonboard")
+def collect_getonboard(expected_next_run: str | None = None) -> dict:
+    return asyncio.run(collect_getonboard_async(expected_next_run))
+
+
 COLLECTOR_TASKS = {
     "remoteok": collect_remoteok,
     "weworkremotely": collect_weworkremotely,
+    "getonboard": collect_getonboard,
 }

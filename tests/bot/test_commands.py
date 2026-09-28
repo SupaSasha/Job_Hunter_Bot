@@ -373,3 +373,39 @@ async def test_status_lists_each_persisted_source_and_missing_registered_state(h
     handler.queries.collector_states.return_value = []
     await handler.handle(message("/status"))
     assert "We Work Remotely\nLast success: Never" in reply(handler)
+
+
+async def test_getonboard_status_and_never_run_placeholder(handler):
+    await handler.handle(message("/status"))
+    assert "Get on Board\nLast success: Never" in reply(handler)
+    handler.queries.collector_states.return_value.append(
+        CollectorStateORM(
+            source="getonboard",
+            last_success_at=NOW,
+            next_run_at=NOW + timedelta(hours=8),
+            last_status="success",
+        )
+    )
+    await handler.handle(message("/status"))
+    assert "Get on Board\nLast success: 2026-09-28 12:00" in reply(handler)
+    assert "Remote OK" in reply(handler) and "We Work Remotely" in reply(handler)
+
+
+async def test_owner_collect_dispatches_all_three_real_registered_tasks(handler):
+    from contextlib import ExitStack
+    from unittest.mock import Mock, patch
+
+    from src.bot.dispatch import CeleryCommandDispatcher
+    from src.tasks.jobs import COLLECTOR_TASKS
+
+    assert set(COLLECTOR_TASKS) == {"remoteok", "weworkremotely", "getonboard"}
+    with ExitStack() as stack:
+        publishers = [
+            stack.enter_context(patch.object(task, "delay"))
+            for task in COLLECTOR_TASKS.values()
+        ]
+        handler.dispatcher = CeleryCommandDispatcher(COLLECTOR_TASKS.values(), Mock())
+        await handler.handle(message("/collect"))
+        for publisher in publishers:
+            publisher.assert_called_once_with()
+    assert reply(handler) == "Collection started."

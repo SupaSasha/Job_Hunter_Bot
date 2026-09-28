@@ -11,7 +11,7 @@ from src.bot.settings import SettingsHandler
 from src.repositories.bot_queries import BotQueryRepository
 from src.repositories.feedback import FeedbackRepository
 from src.repositories.users import UserRepository
-from src.services.collector_policy import COLLECTOR_POLICIES
+from src.services.collector_policy import COLLECTOR_POLICIES, source_display_name
 from src.services.default_filters import default_user_filters
 from src.services.entitlements import EffectiveNotificationSettings, EntitlementService
 
@@ -172,8 +172,7 @@ class CommandHandler:
         collector_sections = []
         for source in dict.fromkeys([*COLLECTOR_POLICIES, *states]):
             collector = states.get(source)
-            policy = COLLECTOR_POLICIES.get(source)
-            name = policy.display_name if policy else source
+            name = source_display_name(source)
             last_success = timestamp(
                 collector.last_success_at if collector else None, "Never"
             )

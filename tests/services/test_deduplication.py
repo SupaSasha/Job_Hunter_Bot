@@ -150,3 +150,21 @@ async def test_wwr_matches_remoteok_via_existing_fingerprint():
         "fingerprint",
         42,
     )
+
+
+@pytest.mark.parametrize("existing_source", ["remoteok", "weworkremotely"])
+async def test_getonboard_cross_source_fingerprint(existing_source):
+    original = build_job(source=existing_source)
+    incoming = build_job(
+        source="getonboard",
+        external_id="different-id",
+        url="https://www.getonbrd.com/jobs/different-id",
+    )
+    assert DeduplicationService.calculate_fingerprint(
+        original
+    ) == DeduplicationService.calculate_fingerprint(incoming)
+    repository = AsyncMock(spec=JobRepository)
+    repository.get_by_source_external_id.return_value = None
+    repository.get_by_fingerprint.return_value = JobORM(id=42, source=existing_source)
+    outcome = await DeduplicationService(repository).check(incoming)
+    assert outcome.is_duplicate and outcome.reason == "fingerprint"
