@@ -1,3 +1,4 @@
+from src.models.collector_run import CollectorRunORM
 from src.models.feedback import FeedbackORM
 from src.models.job import JobORM
 from src.models.notification import NotificationORM
@@ -10,6 +11,7 @@ from src.models.scheduling import (
 from src.models.user import UserORM
 
 __all__ = [
+    "CollectorRunORM",
     "CollectorStateORM",
     "DigestRunORM",
     "FeedbackORM",

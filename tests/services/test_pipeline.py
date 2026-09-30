@@ -29,7 +29,9 @@ async def test_collection_normalizes_saves_and_counts_duplicates():
     ]
     pipeline = JobPipeline(save)
     result = await pipeline.run([make_job(), make_job()])
-    assert result.model_dump() == dict(received=2, new=1, duplicates=1, failed=0)
+    assert result.model_dump() == dict(
+        received=2, new=1, duplicates=1, failed=0, cross_source_duplicates=0
+    )
     job = save.save_if_new.call_args.args[0]
     assert job.title == "Python Developer"
     assert job.technologies == ["python", "fastapi"]
@@ -61,3 +63,21 @@ async def test_invalid_job_does_not_prevent_other_jobs_being_saved():
     pipeline.normalizer.normalize.side_effect = [ValueError("bad input"), make_job()]
     result = await pipeline.run([make_job(), make_job(2)])
     assert result.failed == result.new == 1
+
+
+async def test_cross_source_counter_and_progress_survive_failure():
+    from src.services.pipeline import CollectionResult
+
+    save = AsyncMock(spec=JobSaveService)
+    save.save_if_new.side_effect = [
+        JobSaveResult(status="saved", job_id=7),
+        JobSaveResult(status="duplicate", job_id=8, cross_source_duplicate=True),
+        JobSaveResult(status="duplicate", job_id=7),
+        RuntimeError("failure"),
+    ]
+    progress = CollectionResult()
+    with pytest.raises(RuntimeError):
+        await JobPipeline(save).run([make_job(i) for i in range(5)], result=progress)
+    assert progress.model_dump() == dict(
+        received=5, new=1, duplicates=2, cross_source_duplicates=1, failed=1
+    )

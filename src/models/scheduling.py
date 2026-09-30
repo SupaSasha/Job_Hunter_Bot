@@ -1,29 +1,18 @@
-from datetime import date, datetime, time
+from datetime import datetime, time
 
 from sqlalchemy import (
-    BigInteger,
     CheckConstraint,
-    Date,
     DateTime,
     ForeignKey,
     String,
     Time,
-    UniqueConstraint,
-    func,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.db.base import Base
-
-
-class Timestamps:
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
+from src.models.digest_run import DigestRunORM as DigestRunORM
+from src.models.timestamps import Timestamps
 
 
 class CollectorStateORM(Timestamps, Base):
@@ -76,29 +65,3 @@ class UserSubscriptionORM(Timestamps, Base):
     subscription_ends_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
-
-
-class DigestRunORM(Timestamps, Base):
-    """A committed reservation is final for this date, including failed/empty runs."""
-
-    __tablename__ = "digest_runs"
-    __table_args__ = (
-        UniqueConstraint("user_id", "local_date", name="uq_digest_user_date"),
-        CheckConstraint(
-            "status IN ('pending', 'empty', 'sent', 'partial', 'failed')",
-            name="ck_digest_status",
-        ),
-    )
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    local_date: Mapped[date] = mapped_column(Date)
-    status: Mapped[str] = mapped_column(String(16), default="pending")
-    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    summary_message_id: Mapped[int | None] = mapped_column(BigInteger)
-    selected: Mapped[int] = mapped_column(default=0)
-    sent: Mapped[int] = mapped_column(default=0)
-    failed: Mapped[int] = mapped_column(default=0)
-    skipped: Mapped[int] = mapped_column(default=0)
-    last_error: Mapped[str | None] = mapped_column(String(512))

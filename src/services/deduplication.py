@@ -48,5 +48,6 @@ class DeduplicationService:
                 reason="fingerprint",
                 existing_job_id=existing.id,
                 fingerprint=fingerprint,
+                cross_source_duplicate=existing.source != job.source,
             )
         return DeduplicationResult(is_duplicate=False, fingerprint=fingerprint)

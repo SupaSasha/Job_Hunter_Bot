@@ -4,6 +4,7 @@ from typing import Callable
 from zoneinfo import ZoneInfo
 
 from src.repositories.digests import DigestRepository
+from src.schemas.digest_metrics import DigestMetrics
 from src.schemas.filters import UserFilterDTO
 from src.schemas.job import JobDTO
 from src.schemas.scoring import ScoreResult
@@ -22,14 +23,34 @@ def select_digest_jobs(
     filters: UserFilterDTO,
     min_score: int,
     max_jobs: int,
+    *,
+    metrics: DigestMetrics | None = None,
 ) -> list[DigestItem]:
+    metrics = metrics if metrics is not None else DigestMetrics()
+    metrics.candidate_count = len(candidates)
     filtering, scoring = FilterService(), ScoringService()
     selected = []
     for job_id, job in candidates:
         if filtering.evaluate(job, filters).accepted:
+            metrics.accepted_count += 1
             score = scoring.calculate(job, filters)
+            bucket = (
+                "0_49"
+                if score.score < 50
+                else (
+                    "90_100"
+                    if score.score >= 90
+                    else f"{score.score // 10 * 10}_{score.score // 10 * 10 + 9}"
+                )
+            )
+            field = f"score_{bucket}_count"
+            setattr(metrics, field, getattr(metrics, field) + 1)
             if score.score >= min_score:
                 selected.append((job_id, job, score))
+            else:
+                metrics.below_threshold_count += 1
+        else:
+            metrics.filter_rejected_count += 1
     selected.sort(key=lambda item: (-item[2].score, item[0]))
     return selected[:max_jobs]
 
@@ -81,6 +102,7 @@ class DailyDigestService:
         if run_id is None:
             return {"status": "skipped", "reason": "already_attempted_today"}
         selected = sent = failed = skipped = 0
+        metrics = DigestMetrics()
         try:
             candidates = await self.repository.candidates(user_id)
             items = select_digest_jobs(
@@ -88,9 +110,12 @@ class DailyDigestService:
                 default_user_filters(effective.timezone),
                 effective.min_score,
                 effective.max_jobs_per_digest,
+                metrics=metrics,
             )
             selected = len(items)
-            await self.repository.update(run_id, selected=selected)
+            await self.repository.update(
+                run_id, selected=selected, metrics_recorded=True, **metrics.model_dump()
+            )
             if not items:
                 await self.repository.update(
                     run_id, status="empty", finished_at=self.clock()
@@ -101,10 +126,14 @@ class DailyDigestService:
             )
             await self.repository.update(run_id, summary_message_id=summary_id)
             for job_id, job, score in items:
-                async with self.sessions() as session:
-                    result = await NotificationService(session, self.client).notify(
-                        user=user, job_id=job_id, job=job, score=score
-                    )
+                try:
+                    async with self.sessions() as session:
+                        result = await NotificationService(session, self.client).notify(
+                            user=user, job_id=job_id, job=job, score=score
+                        )
+                except Exception:
+                    failed += 1
+                    raise
                 sent += int(result.sent)
                 skipped += int(result.skipped)
                 failed += int(not result.sent and not result.skipped)
@@ -131,6 +160,7 @@ class DailyDigestService:
                 sent=sent,
                 failed=failed,
                 skipped=skipped,
+                **metrics.model_dump(),
                 last_error=type(exc).__name__,
                 finished_at=self.clock(),
             )

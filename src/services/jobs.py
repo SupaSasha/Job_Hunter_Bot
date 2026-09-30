@@ -41,6 +41,7 @@ class JobSaveService:
                     status="duplicate",
                     job_id=duplicate.existing_job_id,
                     reason=duplicate.reason,
+                    cross_source_duplicate=duplicate.cross_source_duplicate,
                 )
                 await self.session.rollback()
                 return result

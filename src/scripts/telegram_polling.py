@@ -14,10 +14,12 @@ from src.repositories.bot_queries import BotQueryRepository
 from src.repositories.feedback import FeedbackRepository
 from src.repositories.jobs import JobRepository
 from src.repositories.scheduling import DeliveryBootstrap
+from src.repositories.statistics import StatisticsRepository
 from src.repositories.users import UserRepository
 from src.services.entitlements import EntitlementService
 from src.services.feedback import FeedbackService
 from src.services.notification_settings import NotificationSettingsService
+from src.services.statistics import StatisticsService
 from src.services.users import OwnerService
 from src.tasks.jobs import COLLECTOR_TASKS
 from src.tasks.notifications import send_daily_digest
@@ -71,6 +73,9 @@ async def main() -> None:
                         owner_telegram_id=settings.TELEGRAM_CHAT_ID,
                         bot_username=bot_username,
                         settings_handler=settings_handler,
+                        statistics=StatisticsService(
+                            StatisticsRepository(session), entitlements
+                        ),
                     )
                     await route_update(
                         update,

@@ -241,7 +241,7 @@ async def test_owner_dispatches_without_waiting_for_worker(handler, command, exp
     assert reply(handler) == expected
 
 
-@pytest.mark.parametrize("command", ["collect", "digest"])
+@pytest.mark.parametrize("command", ["collect", "digest", "stats"])
 @pytest.mark.parametrize("owner", [123, None])
 async def test_non_owner_cannot_dispatch(handler, command, owner):
     handler.owner_telegram_id = owner
@@ -253,7 +253,7 @@ async def test_non_owner_cannot_dispatch(handler, command, owner):
 
 
 @pytest.mark.parametrize(
-    "command", ["status", "saved", "filters", "settings", "collect", "digest"]
+    "command", ["status", "saved", "filters", "settings", "collect", "digest", "stats"]
 )
 @pytest.mark.parametrize("missing", [True, False])
 async def test_unknown_or_inactive_user_cannot_access_data(handler, command, missing):
@@ -269,7 +269,7 @@ async def test_unknown_or_inactive_user_cannot_access_data(handler, command, mis
 
 
 @pytest.mark.parametrize(
-    "command", ["collect", "digest", "status", "saved", "filters", "settings"]
+    "command", ["collect", "digest", "stats", "status", "saved", "filters", "settings"]
 )
 async def test_group_or_mismatched_chat_cannot_leak_owner_data(handler, command):
     await handler.handle(message(f"/{command}", chat_id=-42, chat_type="group"))
@@ -409,3 +409,98 @@ async def test_owner_collect_dispatches_all_three_real_registered_tasks(handler)
         for publisher in publishers:
             publisher.assert_called_once_with()
     assert reply(handler) == "Collection started."
+
+
+@pytest.mark.parametrize(
+    "text,period",
+    [
+        ("/stats", "7d"),
+        ("/stats 24h", "24h"),
+        ("/stats@ExampleBot 7d", "7d"),
+        ("/stats 30d", "30d"),
+    ],
+)
+async def test_owner_stats_empty_database_sections(handler, text, period):
+    from src.schemas.statistics import BotStats, CollectorStats
+    from src.services.statistics import StatisticsService
+
+    handler.statistics = AsyncMock(spec=StatisticsService)
+    handler.statistics.get_stats.return_value = BotStats(
+        period=period,
+        since=NOW - timedelta(days=7),
+        until=NOW,
+        collectors=[CollectorStats(source="remoteok")],
+    )
+    await handler.handle(message(text))
+    handler.statistics.get_stats.assert_awaited_once_with(period)
+    for section in [
+        "Collectors",
+        "Remote OK",
+        "Pipeline",
+        "90–100",
+        "0–49",
+        "Delivery",
+        "Feedback",
+        "Users",
+        "Data quality",
+        "N/A",
+    ]:
+        assert section in reply(handler)
+    handler.dispatcher.collect.assert_not_awaited()
+    handler.dispatcher.digest.assert_not_awaited()
+
+
+@pytest.mark.parametrize("text", ["/stats 1d", "/stats 7d extra"])
+async def test_invalid_stats_period_does_not_query(handler, text):
+    handler.statistics = AsyncMock()
+    await handler.handle(message(text))
+    assert reply(handler) == "Usage: /stats [24h|7d|30d]"
+    handler.statistics.get_stats.assert_not_awaited()
+
+
+async def test_stats_only_in_owner_help(handler):
+    await handler.handle(message("/help"))
+    assert "/stats" in reply(handler)
+    await handler.handle(message("/help", sender_id=999))
+    assert "/stats" not in reply(handler)
+
+
+async def test_stats_error_does_not_expose_database_details(handler, caplog):
+    handler.statistics = AsyncMock()
+    handler.statistics.get_stats.side_effect = RuntimeError("private credentials")
+    with caplog.at_level(logging.ERROR):
+        await handler.handle(message("/stats"))
+    assert reply(handler) == "Statistics are temporarily unavailable."
+    assert "private credentials" not in caplog.text
+
+
+def test_stats_long_output_split_at_telegram_limit():
+    from src.bot.statistics import format_statistics
+    from src.schemas.statistics import BotStats, CollectorStats
+
+    stats = BotStats(
+        period="7d",
+        since=NOW,
+        until=NOW,
+        collectors=[CollectorStats(source=f"source_{n}") for n in range(30)],
+    )
+    messages = format_statistics(stats)
+    assert len(messages) > 1
+    assert all(len(text.encode("utf-16-le")) // 2 <= 4096 for text in messages)
+    assert "Users" in "\n".join(messages)
+
+
+def test_historical_digests_do_not_appear_as_measured_zeroes():
+    from src.bot.statistics import format_statistics
+    from src.schemas.statistics import BotStats, DigestStats
+
+    stats = BotStats(
+        period="7d",
+        since=NOW,
+        until=NOW,
+        digest=DigestStats(runs=3, unmeasured_runs=3, selected_count=2, sent_count=2),
+    )
+    text = "\n".join(format_statistics(stats))
+    assert "Candidates: N/A" in text
+    assert "90–100: N/A" in text
+    assert "Selected: 2 | Sent: 2" in text

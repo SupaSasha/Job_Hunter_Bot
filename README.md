@@ -82,7 +82,7 @@ accepted for compatibility but no longer control collection or digest delivery.
 No filtering, scoring or Telegram delivery runs in collection.
 
 `JobPipeline(save_service).run(jobs)` returns
-`CollectionResult(received, new, duplicates, failed)`.
+`CollectionResult(received, new, duplicates, failed, cross_source_duplicates)`.
 `CollectionService(sessions, redis, timezone).collect(source, expected_next_run=None)`
 adds the source lock, HTTP collection and persistent scheduling.
 The existing collect_remoteok method remains a compatibility wrapper.
@@ -365,8 +365,9 @@ IDs receive `This command is not available.` without exposing account data.
 | /saved | Show up to ten most recently saved jobs, without descriptions |
 | /filters | Show the current shared filter profile and effective digest time/minimum score |
 | /settings | View effective settings and edit timezone, digest time and score |
-| /collect | Owner only: enqueue both Remote OK, We Work Remotely and Get on Board collection |
+| /collect | Owner only: enqueue Remote OK, We Work Remotely and Get on Board collection |
 | /digest | Owner only: enqueue today's digest immediately |
+| /stats [24h\|7d\|30d] | Owner only: read historical pipeline statistics; default 7d |
 
 `CommandHandler(...).handle(message)` in `src/bot/commands.py` handles commands.
 It receives repositories, TelegramClient, a dispatcher, EntitlementService,
@@ -435,8 +436,8 @@ settings - Notification settings
 /settings is available to every registered active user in their private chat.
 The menu shows effective timezone, daily digest time, minimum match score, and
 Trial/Premium/Free plan. An active trial also shows its end date in the user's
-local timezone. Only the owner sees /collect and /digest in the admin section
-of /help; neither belongs in the public BotFather menu.
+local timezone. Only the owner sees /collect, /digest and /stats in the admin section
+of /help; these commands are excluded from the public BotFather menu.
 
 - Timezones: America/Montevideo, America/Sao_Paulo,
   America/Argentina/Buenos_Aires, America/New_York, America/Los_Angeles,
@@ -501,3 +502,78 @@ persisted jitter, timezones, daily uniqueness, subscription boundaries, filterin
 ranking, caps, delivery failures, locks, callbacks and task registration.
 Migrations, broker/worker execution and live Telegram delivery are separate
 manual checks.
+
+
+## Pipeline statistics
+
+Use `/stats`, `/stats 24h`, `/stats 7d` or `/stats 30d` in the configured owner's
+private chat. The owner must be an active registered user. Other users receive
+`This command is not available.` The command reads PostgreSQL and does not
+start tasks. `/status` continues to show current scheduling state.
+
+`CollectorRunORM` records each registered collector invocation before acquiring
+its Redis lock, then persists counters, finish time, monotonic duration and a
+sanitized error type. Terminal statuses are success, failed and skipped;
+running is the initial state and also makes hard-killed runs visible. Skipped
+locks and stale schedules do not count as failures. Partial job counts survive
+an exception after earlier jobs were committed. Received counts include all
+collector DTOs, not individual entries discarded internally by existing parsers.
+Cross-source duplicates are fingerprint matches whose stored source differs
+from the incoming source; source/external-ID matches are ordinary duplicates.
+
+`DigestRunORM` is now defined in `src/models/digest_run.py` and remains importable
+from scheduling. The existing table, unique daily reservation, delivery columns
+and retry behavior are preserved. ORM aliases selected_count/sent_count/failed_count
+refer to the existing selected/sent/failed columns. Additional columns store
+candidates, filter rejections, accepted jobs, six score buckets and below-threshold
+jobs. Selection still evaluates each job once. Accepted jobs enter score buckets
+before threshold and digest-cap selection. Metrics are persisted before the summary;
+delivery progress is persisted after each attempt. Failed card attempts include
+unexpected processing errors; a summary error is a failed run with zero attempted
+cards. Notifications remain the independent record of confirmed delivery outcomes.
+
+Historical rows keep `metrics_recorded=false`. Runs that never finish selection
+also remain unmeasured. Their selection counters are excluded from aggregates;
+existing delivery counts remain available. When all runs are unmeasured, selection
+and score output is N/A. No historical filter results are fabricated.
+
+Public API:
+
+```python
+StatisticsRepository(session).get_collector_stats(since, until=None)
+StatisticsRepository(session).get_digest_stats(since, until=None)
+StatisticsRepository(session).get_feedback_stats(since, until=None)
+StatisticsRepository(session).get_notification_stats(since, until=None)
+StatisticsRepository(session).get_user_stats()
+StatisticsRepository(session).get_data_quality(since, until=None, by_source=False)
+StatisticsService(repository, entitlements).get_stats(period="7d") -> BotStats
+```
+
+The read-only repository performs SQL aggregation. User totals are SQL counts;
+subscription snapshots are classified by the existing EntitlementService with
+the same clock. Trial/Premium/Free are mutually exclusive across all users;
+active users are counted independently. Telegram receives typed statistics,
+not ORM rows. All period queries use `[since, until)` in UTC: collector/digest
+started_at, job created_at, notification created_at, and feedback updated_at.
+Feedback counts are the latest saved/rejected state updated in the period,
+not a history of clicks. Users are a current snapshot. Repeated digest candidates
+are counted once per user/run, not as distinct jobs over the whole period.
+
+Rates are fractions in schemas and percentages in Telegram:
+
+- Duplicate rate: duplicates / received; cross-source duplicates are a subset.
+- Filter rejection rate: rejected / candidates in measured digests.
+- Notification success rate: sent / (sent + failed), excluding pending.
+- Save/reject rates: feedback / sent notifications. These compare period totals,
+  not matched delivery cohorts; feedback on older cards can make rates exceed 100%.
+- New jobs per run: new jobs / (successful + failed runs), excluding skipped/running.
+- Zero denominators produce None in schemas and N/A in Telegram.
+
+Data completeness covers jobs inserted during the period, overall and by source:
+salary requires at least one positive numeric bound (0–0 is unknown), region
+requires nonempty remote_regions, timezone requires nonblank timezone_text or
+an explicit numeric offset (zero is valid), and technologies requires a nonempty
+technologies array. These measure populated fields, not their accuracy or job
+eligibility. Free-form location is not interpreted as remote eligibility.
+No rejection-reason event log, analytics service or automatic scheduler tuning
+is introduced. See [the implementation and data audit](docs/statistics-stage-report.md).

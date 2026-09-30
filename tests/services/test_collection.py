@@ -47,6 +47,7 @@ def setup(monkeypatch):
     service = CollectionService(
         sessions, redis, "America/Montevideo", clock=lambda: now
     )
+    service.runs = AsyncMock()
     service.states = AsyncMock()
     service.states.get.return_value = CollectorStateORM(
         source="remoteok", next_run_at=now - timedelta(minutes=1)
@@ -62,7 +63,7 @@ def setup(monkeypatch):
 async def test_collection_updates_success_and_next_window(setup):
     service, _, collector, now = setup
     assert await service.collect_remoteok() == dict(
-        received=0, new=0, duplicates=0, failed=0
+        received=0, new=0, duplicates=0, failed=0, cross_source_duplicates=0
     )
     final = service.states.update.call_args.kwargs
     assert final["last_status"] == "success"
@@ -107,7 +108,9 @@ async def test_wwr_has_own_state_window_and_same_pipeline(setup, monkeypatch):
     service, redis, collector, now = setup
     monkeypatch.setitem(COLLECTORS, "weworkremotely", lambda: collector)
     result = await service.collect("weworkremotely")
-    assert result == dict(received=0, new=0, duplicates=0, failed=0)
+    assert result == dict(
+        received=0, new=0, duplicates=0, failed=0, cross_source_duplicates=0
+    )
     service.states.ensure.assert_awaited_once_with(
         "weworkremotely", now, "America/Montevideo"
     )
@@ -180,7 +183,7 @@ async def test_getonboard_uses_own_state_and_existing_pipeline(setup, monkeypatc
     service, redis, collector, now = setup
     monkeypatch.setitem(COLLECTORS, "getonboard", lambda: collector)
     assert await service.collect("getonboard") == dict(
-        received=0, new=0, duplicates=0, failed=0
+        received=0, new=0, duplicates=0, failed=0, cross_source_duplicates=0
     )
     service.states.ensure.assert_awaited_once_with(
         "getonboard", now, "America/Montevideo"
@@ -191,3 +194,68 @@ async def test_getonboard_uses_own_state_and_existing_pipeline(setup, monkeypatc
         ZoneInfo("America/Montevideo")
     )
     assert 6 <= local.hour < 8
+
+
+@pytest.mark.parametrize("outcome", ["success", "failed", "locked", "stale"])
+async def test_collector_run_status_duration_and_safe_error(setup, outcome):
+    service, redis, collector, now = setup
+    times = iter([10.0, 11.25])
+    service.timer = lambda: next(times)
+    service.runs.start.return_value = 42
+    expected = None
+    if outcome == "failed":
+        collector.collect.side_effect = ValueError("secret-token")
+    elif outcome == "locked":
+        redis.lock.return_value.acquire.return_value = False
+    elif outcome == "stale":
+        expected = now.isoformat()
+    await service.collect("remoteok", expected)
+    service.runs.start.assert_awaited_once_with("remoteok", now)
+    assert service.runs.finish.call_args.args == (42,)
+    run = service.runs.finish.call_args.kwargs
+    assert run["status"] == {"locked": "skipped", "stale": "skipped"}.get(
+        outcome, outcome
+    )
+    assert run["duration_ms"] == 1250
+    assert run["finished_at"] == now
+    assert run["received_count"] == run["failed_count"] == 0
+    assert "secret-token" not in str(run)
+
+
+async def test_collector_run_keeps_partial_progress_after_database_error(
+    setup, monkeypatch
+):
+    from src.services.pipeline import JobPipeline
+
+    service, _, _, _ = setup
+
+    async def run(self, jobs, *, result):
+        result.received = 7
+        result.new = 2
+        result.duplicates = 3
+        result.cross_source_duplicates = 1
+        result.failed = 1
+        raise RuntimeError("private database connection details")
+
+    monkeypatch.setattr(JobPipeline, "run", run)
+    assert (await service.collect("remoteok"))["status"] == "failed"
+    run = service.runs.finish.call_args.kwargs
+    assert [
+        run[key]
+        for key in [
+            "received_count",
+            "new_count",
+            "duplicate_count",
+            "cross_source_duplicate_count",
+            "failed_count",
+        ]
+    ] == [7, 2, 3, 1, 1]
+    assert run["error"] == "RuntimeError"
+
+
+async def test_state_failure_still_finalizes_telemetry(setup):
+    service, _, _, _ = setup
+    service.states.ensure.side_effect = RuntimeError("private")
+    with pytest.raises(RuntimeError):
+        await service.collect("remoteok")
+    assert service.runs.finish.call_args.kwargs["status"] == "failed"

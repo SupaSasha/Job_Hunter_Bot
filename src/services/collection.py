@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from datetime import UTC, datetime
 from typing import Callable
 
@@ -7,11 +8,12 @@ from redis.asyncio import Redis
 
 from src.collectors.base import BaseJobCollector, CollectionError
 from src.collectors.registry import COLLECTORS
+from src.repositories.collector_runs import CollectorRunRepository
 from src.repositories.scheduling import CollectorStateRepository
 from src.services.collector_policy import COLLECTOR_POLICIES, next_collection
 from src.services.jobs import JobSaveService
 from src.services.locks import collector_lock
-from src.services.pipeline import JobPipeline
+from src.services.pipeline import CollectionResult, JobPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -24,11 +26,14 @@ class CollectionService:
         timezone: str,
         *,
         clock: Callable = lambda: datetime.now(UTC),
+        timer: Callable = time.monotonic,
     ):
         self.sessions = sessions
         self.redis = redis
         self.timezone = timezone
         self.clock = clock
+        self.timer = timer
+        self.runs = CollectorRunRepository(sessions)
         self.states = CollectorStateRepository(sessions)
 
     async def collect_remoteok(self, expected_next_run: str | None = None) -> dict:
@@ -45,6 +50,35 @@ class CollectionService:
             raise ValueError("Unknown collector")
         if collector is not None and collector.source_name != source:
             raise ValueError("Collector source does not match")
+        started = self.timer()
+        run_id = await self.runs.start(source, self.clock())
+        result = CollectionResult()
+        status, error = "failed", None
+        try:
+            outcome = await self._collect(source, expected_next_run, collector, result)
+            status = outcome.get("status", "failed" if result.failed else "success")
+            error = outcome.get("error") or outcome.get("reason")
+            if result.failed and error is None:
+                error = "Invalid jobs"
+            return outcome
+        except BaseException as exc:
+            error = type(exc).__name__[:512]
+            raise
+        finally:
+            await self.runs.finish(
+                run_id,
+                status=status,
+                error=error,
+                finished_at=self.clock(),
+                duration_ms=max(0, round((self.timer() - started) * 1000)),
+                received_count=result.received,
+                new_count=result.new,
+                duplicate_count=result.duplicates,
+                cross_source_duplicate_count=result.cross_source_duplicates,
+                failed_count=result.failed,
+            )
+
+    async def _collect(self, source, expected_next_run, collector, result):
         policy = COLLECTOR_POLICIES[source]
         async with (
             asyncio.timeout(600),
@@ -67,7 +101,9 @@ class CollectionService:
                 async with asyncio.timeout(510):
                     jobs = await (collector or COLLECTORS[source]()).collect()
                     async with self.sessions() as session:
-                        result = await JobPipeline(JobSaveService(session)).run(jobs)
+                        result = await JobPipeline(JobSaveService(session)).run(
+                            jobs, result=result
+                        )
                 finished = self.clock()
                 if result.failed:
                     await self.states.update(

@@ -183,6 +183,7 @@ async def test_unexpected_job_failure_after_success_is_partial(setup):
     ]
     assert (await service.send(2))["status"] == "partial"
     assert service.repository.state["sent"] == 1
+    assert service.repository.state["failed"] == 1
 
 
 async def test_stale_date_disabled_user_and_missing_token_do_not_reserve(setup):
@@ -212,3 +213,66 @@ async def test_run_now_does_not_enable_disabled_delivery(setup):
     assert (await service.send(2, run_now=True))["reason"] == "inactive_or_disabled"
     assert not service.repository.reserved
     client.send_message.assert_not_awaited()
+
+
+async def test_digest_persists_pipeline_and_delivery_metrics(setup):
+    service, _, notify = setup
+    rejected = job(3).model_copy(update={"technologies": ["java"]})
+    service.repository.items.append((3, rejected))
+    notify.side_effect = [
+        NotificationResult(sent=True, skipped=False),
+        NotificationResult(sent=False, skipped=False, reason="timeout"),
+    ]
+    await service.send(2)
+    state = service.repository.state
+    assert state["metrics_recorded"] is True
+    assert state["candidate_count"] == 3
+    assert state["filter_rejected_count"] == 1
+    assert state["accepted_count"] == 2
+    assert sum(value for name, value in state.items() if name.startswith("score_")) == 2
+    assert state["selected"] == 2
+    assert state["sent"] == state["failed"] == 1
+
+
+@pytest.mark.parametrize(
+    "score,bucket",
+    [
+        (0, "0_49"),
+        (49, "0_49"),
+        (50, "50_59"),
+        (59, "50_59"),
+        (60, "60_69"),
+        (69, "60_69"),
+        (70, "70_79"),
+        (79, "70_79"),
+        (80, "80_89"),
+        (89, "80_89"),
+        (90, "90_100"),
+        (100, "90_100"),
+    ],
+)
+def test_score_bucket_boundaries_and_threshold(monkeypatch, score, bucket):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from src.schemas.digest_metrics import DigestMetrics
+
+    calculate = Mock(return_value=SimpleNamespace(score=score))
+    monkeypatch.setattr("src.services.digests.ScoringService.calculate", calculate)
+    metrics = DigestMetrics()
+    selected = select_digest_jobs(
+        [(1, job(1))], default_user_filters(), 70, 1, metrics=metrics
+    )
+    assert getattr(metrics, f"score_{bucket}_count") == 1
+    assert metrics.accepted_count == metrics.candidate_count == 1
+    assert metrics.below_threshold_count == int(score < 70)
+    assert len(selected) == int(score >= 70)
+    calculate.assert_called_once()
+
+
+async def test_empty_digest_records_measured_zeroes(setup):
+    service, _, _ = setup
+    service.repository.items = []
+    await service.send(2)
+    assert service.repository.state["metrics_recorded"] is True
+    assert service.repository.state["candidate_count"] == 0

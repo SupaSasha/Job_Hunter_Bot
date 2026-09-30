@@ -168,3 +168,27 @@ async def test_getonboard_cross_source_fingerprint(existing_source):
     repository.get_by_fingerprint.return_value = JobORM(id=42, source=existing_source)
     outcome = await DeduplicationService(repository).check(incoming)
     assert outcome.is_duplicate and outcome.reason == "fingerprint"
+
+
+@pytest.mark.parametrize(
+    "existing_source,expected", [("remoteok", False), ("getonboard", True)]
+)
+async def test_fingerprint_duplicate_marks_cross_source(existing_source, expected):
+    from unittest.mock import AsyncMock
+
+    from src.models.job import JobORM
+    from src.repositories.jobs import JobRepository
+    from src.schemas.job import JobDTO
+
+    repository = AsyncMock(spec=JobRepository)
+    repository.get_by_source_external_id.return_value = None
+    repository.get_by_fingerprint.return_value = JobORM(id=10, source=existing_source)
+    job = JobDTO(
+        source="remoteok",
+        external_id="1",
+        title="Developer",
+        url="https://example.com/job",
+    )
+    result = await DeduplicationService(repository).check(job)
+    assert result.reason == "fingerprint"
+    assert result.cross_source_duplicate is expected

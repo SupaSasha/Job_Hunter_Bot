@@ -8,12 +8,14 @@ from src.bot.client import TelegramAPIError, TelegramClient
 from src.bot.dispatch import CommandDispatcher
 from src.bot.formatter import _truncate
 from src.bot.settings import SettingsHandler
+from src.bot.statistics import format_statistics
 from src.repositories.bot_queries import BotQueryRepository
 from src.repositories.feedback import FeedbackRepository
 from src.repositories.users import UserRepository
 from src.services.collector_policy import COLLECTOR_POLICIES, source_display_name
 from src.services.default_filters import default_user_filters
 from src.services.entitlements import EffectiveNotificationSettings, EntitlementService
+from src.services.statistics import StatisticsService
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +36,8 @@ HELP = (
 ADMIN_HELP = (
     "\n\nAdmin commands:\n"
     "/collect - Run all job collectors now\n"
-    "/digest - Send today's digest now"
+    "/digest - Send today's digest now\n"
+    "/stats [24h|7d|30d] - Pipeline statistics"
 )
 UNAVAILABLE = "This command is not available."
 UNKNOWN = "Unknown command. Use /help to see available commands."
@@ -47,6 +50,7 @@ COMMANDS = {
     "settings",
     "collect",
     "digest",
+    "stats",
 }
 
 
@@ -128,8 +132,10 @@ class CommandHandler:
         owner_telegram_id: int | None,
         bot_username: str,
         settings_handler: SettingsHandler | None = None,
+        statistics: StatisticsService | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ):
+        self.statistics = statistics
         self.settings_handler = settings_handler
         self.users = users
         self.queries = queries
@@ -243,7 +249,7 @@ class CommandHandler:
             logger.info("Unknown command")
             await self._reply(chat_id, UNKNOWN)
             return
-        admin = command in {"collect", "digest"}
+        admin = command in {"collect", "digest", "stats"}
         if admin and (
             self.owner_telegram_id is None or sender_id != self.owner_telegram_id
         ):
@@ -256,7 +262,9 @@ class CommandHandler:
                 logger.warning("Unauthorized admin command")
             await self._reply(chat_id, UNAVAILABLE)
             return
-        if admin:
+        if command == "stats":
+            await self._stats(chat_id, message["text"])
+        elif admin:
             await self._admin(command, user.id, chat_id)
         elif command == "settings":
             if self.settings_handler is not None:
@@ -281,6 +289,25 @@ class CommandHandler:
                     else "Notification settings are not available yet."
                 ),
             )
+
+    async def _stats(self, chat_id: int, text: str) -> None:
+        arguments = text.split()[1:]
+        if len(arguments) > 1 or (
+            arguments and arguments[0] not in {"24h", "7d", "30d"}
+        ):
+            await self._reply(chat_id, "Usage: /stats [24h|7d|30d]")
+            return
+        if self.statistics is None:
+            await self._reply(chat_id, "Statistics are unavailable.")
+            return
+        try:
+            stats = await self.statistics.get_stats(arguments[0] if arguments else "7d")
+        except Exception as exc:
+            logger.error("Statistics failed: %s", type(exc).__name__)
+            await self._reply(chat_id, "Statistics are temporarily unavailable.")
+            return
+        for message in format_statistics(stats):
+            await self._reply(chat_id, message)
 
     async def _admin(self, command: str, user_id: int, chat_id: int) -> None:
         action = "collection" if command == "collect" else "digest"
