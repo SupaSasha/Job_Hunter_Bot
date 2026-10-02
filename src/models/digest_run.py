@@ -6,8 +6,8 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     String,
-    UniqueConstraint,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, synonym
@@ -17,13 +17,19 @@ from src.models.timestamps import Timestamps
 
 
 class DigestRunORM(Timestamps, Base):
-    """A committed reservation is final for this date, including failed/empty runs."""
+    """One active reservation per user/day; abandoned attempts retain history."""
 
     __tablename__ = "digest_runs"
     __table_args__ = (
-        UniqueConstraint("user_id", "local_date", name="uq_digest_user_date"),
+        Index(
+            "uq_digest_user_date",
+            "user_id",
+            "local_date",
+            unique=True,
+            postgresql_where=text("status <> 'abandoned'"),
+        ),
         CheckConstraint(
-            "status IN ('pending', 'empty', 'sent', 'partial', 'failed')",
+            "status IN ('pending', 'empty', 'sent', 'partial', 'failed', 'abandoned')",
             name="ck_digest_status",
         ),
     )

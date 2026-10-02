@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import date, datetime, time
+from datetime import datetime, time
 from zoneinfo import ZoneInfo
 
 from src.models.scheduling import UserNotificationSettingsORM, UserSubscriptionORM
@@ -65,13 +65,8 @@ class EntitlementService:
 def digest_due(
     settings: EffectiveNotificationSettings,
     now: datetime,
-    completed_dates: set[date],
 ) -> bool:
     if now.tzinfo is None:
         raise ValueError("now must be timezone-aware")
     local = now.astimezone(ZoneInfo(settings.timezone))
-    return (
-        settings.digest_enabled
-        and local.time() >= settings.digest_time
-        and local.date() not in completed_dates
-    )
+    return settings.digest_enabled and local.time() >= settings.digest_time

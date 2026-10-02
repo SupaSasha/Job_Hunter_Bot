@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import httpx
@@ -20,6 +21,7 @@ class RemoteOKCollector(BaseJobCollector):
 
     source_name = "remoteok"
     api_url = "https://remoteok.com/api"
+    max_response_bytes = 8 * 1024 * 1024
 
     async def collect(self) -> list[JobDTO]:
         logger.info("[%s] starting collection", self.source_name)
@@ -30,30 +32,33 @@ class RemoteOKCollector(BaseJobCollector):
                 follow_redirects=True,
                 headers=self.request_headers,
             ) as client:
-                response = await client.get(self.api_url)
-                if response.status_code == 429:
-                    retry_after = response.headers.get("Retry-After")
-                    logger.warning(
-                        "[%s] rate limited by Remote OK. Retry-After: %s",
-                        self.source_name,
-                        retry_after,
-                    )
-                    raise CollectionError("Remote OK rate limited")
-                response.raise_for_status()
-                payload = response.json()
+                async with client.stream("GET", self.api_url) as response:
+                    if response.status_code == 429:
+                        retry_at = self._retry_at(
+                            response.headers.get("Retry-After", "")
+                        )
+                        logger.warning("Remote OK HTTP 429; retry_at=%s", retry_at)
+                        raise CollectionError(
+                            "Remote OK rate limited", retry_at=retry_at
+                        )
+                    response.raise_for_status()
+                    content = bytearray()
+                    async for chunk in response.aiter_bytes(chunk_size=65536):
+                        content.extend(chunk)
+                        if len(content) > self.max_response_bytes:
+                            raise CollectionError(
+                                "Remote OK response exceeds size limit"
+                            )
+                payload = json.loads(content)
         except httpx.TimeoutException as exc:
-            logger.error("[%s] request timeout: %s", self.source_name, exc)
-            raise CollectionError("Remote OK collection failed")
+            logger.error("Remote OK request timeout (%s)", type(exc).__name__)
+            raise CollectionError("Remote OK request timed out") from exc
         except httpx.HTTPError as exc:
-            logger.error(
-                "[%s] HTTP error while fetching jobs: %s",
-                self.source_name,
-                exc,
-            )
-            raise CollectionError("Remote OK collection failed")
-        except (json.JSONDecodeError, ValueError) as exc:
-            logger.error("[%s] invalid JSON response: %s", self.source_name, exc)
-            raise CollectionError("Remote OK collection failed")
+            logger.error("Remote OK HTTP request failed (%s)", type(exc).__name__)
+            raise CollectionError("Remote OK collection failed") from exc
+        except (ValueError, UnicodeDecodeError) as exc:
+            logger.error("Remote OK invalid JSON (%s)", type(exc).__name__)
+            raise CollectionError("Remote OK invalid JSON") from exc
 
         if not isinstance(payload, list):
             logger.error(
@@ -75,12 +80,21 @@ class RemoteOKCollector(BaseJobCollector):
                 logger.warning(
                     "[%s] skipping malformed job item: %s",
                     self.source_name,
-                    exc,
+                    type(exc).__name__,
                 )
                 continue
 
         logger.info("[%s] collected %s jobs", self.source_name, len(jobs))
         return jobs
+
+    @staticmethod
+    def _retry_at(value: str) -> datetime | None:
+        try:
+            if value.isdigit():
+                return datetime.now(timezone.utc) + timedelta(seconds=int(value))
+            return RemoteOKCollector._parse_datetime(parsedate_to_datetime(value))
+        except (ValueError, TypeError, OverflowError):
+            return None
 
     @staticmethod
     def _parse_datetime(value: Any) -> datetime | None:
@@ -99,7 +113,10 @@ class RemoteOKCollector(BaseJobCollector):
             try:
                 if normalized.endswith("Z"):
                     normalized = normalized[:-1] + "+00:00"
-                return datetime.fromisoformat(normalized).astimezone(timezone.utc)
+                parsed = datetime.fromisoformat(normalized)
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                return parsed.astimezone(timezone.utc)
             except ValueError:
                 return None
         return None

@@ -6,7 +6,14 @@ import httpx
 
 
 class TelegramAPIError(Exception):
-    """A sanitized error: no token, request URL, or raw response body."""
+    """Sanitized failure; retryable means Telegram definitely did not accept it."""
+
+    def __init__(
+        self, message: str, *, retryable: bool = False, retry_after: int | None = None
+    ):
+        super().__init__(message)
+        self.retryable = retryable
+        self.retry_after = retry_after
 
 
 class _TelegramLogFilter(logging.Filter):
@@ -95,6 +102,10 @@ class TelegramClient:
             response = await self._client.post(
                 f"{self._base_url}/{method}", json=payload, **options
             )
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout):
+            raise TelegramAPIError(
+                "Telegram connection failed", retryable=True
+            ) from None
         except httpx.TimeoutException:
             raise TelegramAPIError("Telegram request timed out") from None
         except httpx.RequestError:
@@ -115,7 +126,22 @@ class TelegramClient:
             ):
                 return {"message_id": payload["message_id"]}
         if not response.is_success:
-            raise TelegramAPIError(f"Telegram HTTP error: {response.status_code}")
+            retry_after = None
+            if response.status_code == 429:
+                try:
+                    payload_error = response.json()
+                    parameters = payload_error.get("parameters", {})
+                    value = parameters.get("retry_after")
+                    if type(value) is int and value >= 0:
+                        retry_after = value
+                except (ValueError, AttributeError):
+                    pass
+            raise TelegramAPIError(
+                f"Telegram HTTP error: {response.status_code}",
+                retryable=400 <= response.status_code < 500
+                and response.status_code != 408,
+                retry_after=retry_after,
+            )
         try:
             body = response.json()
         except ValueError:
@@ -125,7 +151,17 @@ class TelegramClient:
         if body.get("ok") is False:
             code = body.get("error_code")
             suffix = f" ({code})" if type(code) is int else ""
-            raise TelegramAPIError(f"Telegram API rejected {method}{suffix}")
+            parameters = body.get("parameters")
+            retry_after = (
+                parameters.get("retry_after") if isinstance(parameters, dict) else None
+            )
+            if type(retry_after) is not int or retry_after < 0:
+                retry_after = None
+            raise TelegramAPIError(
+                f"Telegram API rejected {method}{suffix}",
+                retryable=type(code) is int and 400 <= code < 500 and code != 408,
+                retry_after=retry_after if code == 429 else None,
+            )
         if body.get("ok") is not True or "result" not in body:
             raise TelegramAPIError("Telegram returned an unexpected response")
         return body["result"]

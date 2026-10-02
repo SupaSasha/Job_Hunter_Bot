@@ -61,3 +61,55 @@ def test_remoteok_map_job_handles_missing_optionals() -> None:
     assert dto.salary_max is None
     assert dto.technologies == ["qa", "automation"]
     assert dto.published_at == datetime(2026, 9, 22, 8, 0, tzinfo=timezone.utc)
+
+
+def test_naive_iso_is_utc_independent_of_host_timezone(monkeypatch):
+    import os
+    import time
+
+    previous = os.environ.get("TZ")
+    monkeypatch.setenv("TZ", "America/Los_Angeles")
+    time.tzset()
+    try:
+        assert RemoteOKCollector._parse_datetime("2026-09-22T10:30:00") == datetime(
+            2026, 9, 22, 10, 30, tzinfo=timezone.utc
+        )
+    finally:
+        if previous is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = previous
+        time.tzset()
+
+
+async def test_remoteok_response_limit_and_retry_after(monkeypatch):
+    import httpx
+    import pytest
+
+    from src.collectors.base import CollectionError
+
+    real_client = httpx.AsyncClient
+    for status, content, headers in [
+        (200, b"x" * 101, {}),
+        (429, b"", {"Retry-After": "60"}),
+    ]:
+        monkeypatch.setattr(
+            "src.collectors.remoteok.httpx.AsyncClient",
+            lambda **kwargs: real_client(
+                **kwargs,
+                transport=httpx.MockTransport(
+                    lambda _: httpx.Response(status, content=content, headers=headers)
+                ),
+            ),
+        )
+        collector = RemoteOKCollector()
+        collector.max_response_bytes = 100
+        with pytest.raises(CollectionError) as caught:
+            await collector.collect()
+        if status == 429:
+            assert caught.value.retry_at is not None
+            assert (
+                caught.value.retry_at - datetime.now(timezone.utc)
+            ).total_seconds() > 50
+        else:
+            assert "size limit" in str(caught.value)

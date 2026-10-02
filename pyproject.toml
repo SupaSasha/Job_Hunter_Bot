@@ -9,6 +9,7 @@ requires-python = ">=3.12,<4.0"
 dependencies = [
     "fastapi (>=0.141.1,<0.142.0)",
     "uvicorn (>=0.53.0,<0.54.0)",
+    "pydantic (>=2.13.5,<3.0.0)",
     "pydantic-settings (>=2.15.0,<3.0.0)",
     "httpx (>=0.28.1,<0.29.0)",
     "sqlalchemy[asyncio] (>=2.0,<3.0)",
@@ -34,6 +35,7 @@ dev = [
 [tool.pytest.ini_options]
 addopts = "-ra"
 asyncio_mode = "auto"
+markers = ["integration: requires TEST_DATABASE_URL and PostgreSQL"]
 pythonpath = ["."]
 
 [tool.ruff]
@@ -46,3 +48,6 @@ select = ["E", "F", "I"]
 [tool.black]
 line-length = 88
 target-version = ["py312"]
+
+[tool.poetry]
+package-mode = false

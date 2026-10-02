@@ -1,6 +1,6 @@
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -45,6 +45,7 @@ class DigestRepository:
                     select(DigestRunORM.id).where(
                         DigestRunORM.user_id == user_id,
                         DigestRunORM.local_date == local_date,
+                        DigestRunORM.status != "abandoned",
                     )
                 )
                 is not None
@@ -54,6 +55,9 @@ class DigestRepository:
         self, user_id: int, local_date: date, now: datetime
     ) -> int | None:
         async with self.sessions() as session:
+            await session.execute(
+                self._stale_query(now).where(DigestRunORM.user_id == user_id)
+            )
             run_id = await session.scalar(
                 insert(DigestRunORM)
                 .values(
@@ -66,25 +70,66 @@ class DigestRepository:
                     failed=0,
                     skipped=0,
                 )
-                .on_conflict_do_nothing(constraint="uq_digest_user_date")
+                .on_conflict_do_nothing(
+                    index_elements=["user_id", "local_date"],
+                    index_where=text("status <> 'abandoned'"),
+                )
                 .returning(DigestRunORM.id)
             )
             # This commit MUST precede the summary and every individual message.
             await session.commit()
             return run_id
 
-    async def candidates(self, user_id: int) -> list[tuple[int, JobDTO]]:
+    @staticmethod
+    def _stale_query(now: datetime):
+        from src.config import settings
+
+        cutoff = now - timedelta(minutes=settings.DIGEST_PENDING_TIMEOUT_MINUTES)
+        return (
+            update(DigestRunORM)
+            .where(
+                DigestRunORM.status == "pending",
+                DigestRunORM.started_at < cutoff,
+            )
+            .values(
+                status="abandoned", finished_at=now, last_error="StaleDigestReservation"
+            )
+        )
+
+    async def recover_stale(self, now: datetime) -> None:
+        async with self.sessions() as session:
+            await session.execute(self._stale_query(now))
+            await session.commit()
+
+    async def candidates(
+        self, user_id: int, *, now: datetime | None = None
+    ) -> list[tuple[int, JobDTO]]:
+        from src.config import settings
+
+        now = now or datetime.now(UTC)
+        since = now - timedelta(days=settings.DIGEST_JOB_MAX_AGE_DAYS)
         already_attempted = (
             select(NotificationORM.id)
             .where(
                 NotificationORM.user_id == user_id,
                 NotificationORM.job_id == JobORM.id,
+                or_(
+                    NotificationORM.status != "retryable",
+                    NotificationORM.retry_after_until > now,
+                ),
             )
             .exists()
         )
         async with self.sessions() as session:
             rows = await session.scalars(
-                select(JobORM).where(~already_attempted).order_by(JobORM.id)
+                select(JobORM)
+                .where(
+                    JobORM.collected_at >= since,
+                    JobORM.collected_at <= now,
+                    ~already_attempted,
+                )
+                .order_by(JobORM.collected_at.desc(), JobORM.id.desc())
+                .limit(settings.DIGEST_CANDIDATE_LIMIT)
             )
             return [
                 (row.id, JobDTO.model_validate(row, from_attributes=True))
@@ -94,6 +139,8 @@ class DigestRepository:
     async def update(self, run_id: int, **values: object) -> None:
         async with self.sessions() as session:
             await session.execute(
-                update(DigestRunORM).where(DigestRunORM.id == run_id).values(**values)
+                update(DigestRunORM)
+                .where(DigestRunORM.id == run_id, DigestRunORM.status == "pending")
+                .values(**values)
             )
             await session.commit()

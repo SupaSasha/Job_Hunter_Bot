@@ -90,6 +90,7 @@ async def test_pending_is_committed_before_send_and_sent_persisted(setup) -> Non
         ("sent", "already_sent"),
         ("pending", "already_pending"),
         ("failed", "previous_failed"),
+        ("unknown", "delivery_unknown"),
     ],
 )
 async def test_existing_attempt_is_never_resent(setup, status, reason) -> None:
@@ -113,7 +114,9 @@ async def test_telegram_failure_is_recorded(setup) -> None:
     assert not result.sent and not result.skipped
     assert result.reason == "Telegram request timed out"
     assert events == [("add", "pending"), "commit", "send", "commit"]
-    service.repository.mark_failed.assert_awaited_once_with(5)
+    service.repository.mark_failed.assert_awaited_once_with(
+        5, status="unknown", retry_after_until=None
+    )
     service.repository.mark_sent.assert_not_awaited()
 
 
@@ -122,7 +125,9 @@ async def test_unexpected_client_failure_is_recorded_and_reraised(setup) -> None
     client.error = RuntimeError("unexpected client error")
     with pytest.raises(RuntimeError, match="unexpected client"):
         await service.notify(**kwargs)
-    service.repository.mark_failed.assert_awaited_once_with(5)
+    service.repository.mark_failed.assert_awaited_once_with(
+        5, status="unknown", retry_after_until=None
+    )
     service.repository.mark_sent.assert_not_awaited()
 
 
@@ -186,3 +191,33 @@ async def test_inactive_owner_is_skipped(setup) -> None:
     assert result.skipped
     assert client.calls == []
     service.repository.add.assert_not_awaited()
+
+
+@pytest.mark.parametrize("delay", [None, 30])
+async def test_definite_failure_is_retryable_with_cooldown(setup, delay):
+    from datetime import UTC, datetime
+
+    service, client, _, kwargs = setup
+    client.error = TelegramAPIError("Rejected", retryable=True, retry_after=delay)
+    before = datetime.now(UTC)
+    await service.notify(**kwargs)
+    values = service.repository.mark_failed.call_args.kwargs
+    assert values["status"] == "retryable"
+    assert (values["retry_after_until"] is None) == (delay is None)
+    if delay:
+        assert (values["retry_after_until"] - before).total_seconds() >= delay
+
+
+@pytest.mark.parametrize("claimed", [5, None])
+async def test_retryable_reservation_claim_is_atomic(setup, claimed):
+    service, client, events, kwargs = setup
+    service.repository.get_by_user_job.return_value = NotificationORM(
+        id=5, status="retryable"
+    )
+    service.repository.claim_retryable.return_value = claimed
+    result = await service.notify(**kwargs)
+    assert result.sent == (claimed is not None)
+    assert len(client.calls) == int(claimed is not None)
+    service.repository.add.assert_not_awaited()
+    if claimed:
+        assert events == ["commit", "send", "commit"]

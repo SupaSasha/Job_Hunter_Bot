@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import pytest
+
 from src.schemas.filters import UserFilterDTO
 from src.schemas.job import JobDTO
 from src.services.scoring import ScoringService
@@ -165,3 +167,21 @@ def test_scoring_warns_for_unknown_salary_and_clamps_score_bounds() -> None:
     )
     assert 0 <= bad.score <= 100
     assert bad.score == 0 or bad.score < 40
+
+
+@pytest.mark.parametrize(
+    "description,expected",
+    [
+        ("We've been growing for 12 years. Requires 2 years of experience.", 2),
+        ("5+ years of professional experience", 5),
+        ("At least 4 years experience with Python", 4),
+        ("minimum 3 years experience", 3),
+        ("3+ years experience with Python", 3),
+        ("5 years software experience; 2 years Python experience", 5),
+        ("Company founded 10 years ago", None),
+        ("Product has been used for 7 years", None),
+        ("The team has worked together for 6 years", None),
+    ],
+)
+def test_years_require_explicit_experience_context(description, expected):
+    assert ScoringService._infer_years_of_experience(description) == expected

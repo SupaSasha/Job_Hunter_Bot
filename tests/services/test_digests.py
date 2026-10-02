@@ -75,7 +75,7 @@ class FakeRepository:
         self.state["status"] = "pending"
         return 1
 
-    async def candidates(self, user_id):
+    async def candidates(self, user_id, *, now=None):
         return self.items
 
     async def update(self, run_id, **values):

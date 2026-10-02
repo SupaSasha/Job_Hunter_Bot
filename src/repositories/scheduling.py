@@ -75,28 +75,38 @@ class DeliveryBootstrap:
     async def ensure_users(self, now: datetime | None = None) -> None:
         now = now or datetime.now(UTC)
         async with self.sessions() as session:
-            user_ids = list(await session.scalars(select(UserORM.id)))
-            for user_id in user_ids:
-                await session.execute(
-                    insert(UserNotificationSettingsORM)
-                    .values(
-                        user_id=user_id,
-                        timezone="America/Montevideo",
+            inserted = False
+            defaults = [
+                (
+                    UserNotificationSettingsORM,
+                    dict(
+                        timezone=self.settings.SCHEDULER_TIMEZONE,
                         digest_time=self.settings.FREE_DIGEST_TIME,
                         min_score=self.settings.FREE_MIN_SCORE,
                         digest_enabled=True,
                         max_jobs_per_digest=self.settings.FREE_MAX_JOBS_PER_DIGEST,
-                    )
-                    .on_conflict_do_nothing(index_elements=["user_id"])
-                )
-                await session.execute(
-                    insert(UserSubscriptionORM)
-                    .values(
-                        user_id=user_id,
+                    ),
+                ),
+                (
+                    UserSubscriptionORM,
+                    dict(
                         status="trial",
                         trial_started_at=now,
                         trial_ends_at=now + timedelta(days=self.settings.TRIAL_DAYS),
+                    ),
+                ),
+            ]
+            for model, values in defaults:
+                exists = select(model.id).where(model.user_id == UserORM.id).exists()
+                missing = list(await session.scalars(select(UserORM.id).where(~exists)))
+                if missing:
+                    await session.execute(
+                        insert(model)
+                        .values(
+                            [dict(user_id=user_id, **values) for user_id in missing]
+                        )
+                        .on_conflict_do_nothing(index_elements=["user_id"])
                     )
-                    .on_conflict_do_nothing(index_elements=["user_id"])
-                )
-            await session.commit()
+                    inserted = True
+            if inserted:
+                await session.commit()

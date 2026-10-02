@@ -89,6 +89,7 @@ class StatisticsRepository:
             count_where(run.metrics_recorded.is_(False), "unmeasured_runs"),
             count_where(run.status == "failed", "failed_runs"),
             count_where(run.status == "pending", "pending_runs"),
+            count_where(run.status == "abandoned", "abandoned_runs"),
             *(
                 func.coalesce(
                     func.sum(getattr(run, name)).filter(run.metrics_recorded.is_(True)),
@@ -124,7 +125,7 @@ class StatisticsRepository:
         query = select(
             *(
                 count_where(NotificationORM.status == status, status + "_count")
-                for status in ["sent", "failed", "pending"]
+                for status in ["sent", "failed", "pending", "retryable", "unknown"]
             )
         )
         result = await self.session.execute(

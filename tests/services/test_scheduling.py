@@ -1,5 +1,5 @@
 import random
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, datetime, time, timedelta
 from unittest.mock import AsyncMock, Mock
 from zoneinfo import ZoneInfo
 
@@ -108,18 +108,17 @@ def test_free_defaults_configurable_and_no_subscription():
 
 
 @pytest.mark.parametrize(
-    "hour,minute,done,enabled,expected",
+    "hour,minute,enabled,expected",
     [
-        (8, 59, False, True, False),
-        (9, 2, False, True, True),
-        (9, 2, True, True, False),
-        (9, 2, False, False, False),
+        (8, 59, True, False),
+        (9, 2, True, True),
+        (9, 2, False, False),
     ],
 )
-def test_digest_due_local_date(hour, minute, done, enabled, expected):
+def test_digest_due_local_date(hour, minute, enabled, expected):
     settings = EffectiveNotificationSettings(ZONE, time(9), 70, 10, enabled, False)
     now = datetime(2026, 9, 27, hour, minute, tzinfo=ZoneInfo(ZONE)).astimezone(UTC)
-    assert digest_due(settings, now, {date(2026, 9, 27)} if done else set()) is expected
+    assert digest_due(settings, now) is expected
 
 
 def test_local_calendar_day_and_dst_repeated_hour():
@@ -128,12 +127,11 @@ def test_local_calendar_day_and_dst_repeated_hour():
     )
     first = datetime(2026, 11, 1, 5, 40, tzinfo=UTC)
     second = datetime(2026, 11, 1, 6, 40, tzinfo=UTC)
-    assert digest_due(settings, first, set())
-    assert not digest_due(settings, second, {date(2026, 11, 1)})
+    assert digest_due(settings, first)
+    assert digest_due(settings, second)
+    # Daily uniqueness is enforced by DigestRepository, not a caller-owned set.
     settings = EffectiveNotificationSettings(ZONE, time(22), 70, 10, True, False)
-    assert digest_due(
-        settings, datetime(2026, 9, 28, 2, tzinfo=UTC), {date(2026, 9, 28)}
-    )
+    assert digest_due(settings, datetime(2026, 9, 28, 2, tzinfo=UTC))
 
 
 async def test_dispatch_uses_persisted_timestamp():
@@ -253,3 +251,11 @@ def test_getonboard_windows(hour, initial, start, day):
         local = value.astimezone(ZoneInfo(ZONE))
         assert local.day == day
         assert start <= local.hour < (8 if start == 7 else start + 2)
+
+
+async def test_scheduler_recovers_stale_before_checking_reservations():
+    service = SchedulerService(None, Mock(), ZONE, EntitlementService())
+    service.digests = AsyncMock()
+    service.digests.users.return_value = []
+    await service.dispatch_digests(NOW)
+    service.digests.recover_stale.assert_awaited_once_with(NOW)

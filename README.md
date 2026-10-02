@@ -138,7 +138,9 @@ After a killed worker the lease expires and a later dispatcher can try again.
 status, sanitized error type, and creation/update timestamps.
 
 Persistence preserves the existing source/external ID unique constraint and
-company/title fingerprint deduplication. Fingerprint matching is a heuristic;
+company/title fingerprint deduplication within a 30-day collected-at window.
+Missing companies never deduplicate by title alone. Source/external ID identity
+has no age limit. Fingerprint matching is a heuristic;
 only source identity has a database uniqueness guarantee. JobSaveService owns a
 transaction per job, committing new rows and rolling back duplicates/errors.
 DTOs stay independent of ORM models; timestamps must be aware and are stored in
@@ -263,9 +265,11 @@ whether local digest time has passed. Delivery normally occurs within the next
 5–10 minutes, depending on worker load. Missed times can catch up later the same
 local day. A queued task for a different local date skips.
 
-Candidates are jobs for which **no notification record for this user exists**,
-irrespective of creation time. Thus older jobs and jobs omitted by yesterday's
-limit remain eligible. Every candidate passes the existing `FilterService`
+Candidates fall within `DIGEST_JOB_MAX_AGE_DAYS` (default 7) by `collected_at`,
+exclude future timestamps, and have either no notification or a `retryable`
+notification whose cooldown has elapsed. SQL selects at most
+`DIGEST_CANDIDATE_LIMIT` (default 1000), newest first with job ID as a tie-breaker.
+Jobs omitted by a previous limit remain eligible only within this age window. Every candidate passes the existing `FilterService`
 and `ScoringService`. Results sort by score descending, then job ID for ties;
 effective threshold and maximum count determine the selection. Scoring weights
 are unchanged. `default_user_filters(timezone)` supplies the existing Python,
@@ -273,22 +277,34 @@ remote, Worldwide/LATAM/South America/Uruguay profile and excludes US-only work.
 Filter persistence is deferred; this profile is shared across users.
 
 Before any Telegram request, the service commits a `digest_runs` reservation
-with **UNIQUE(user_id, local_date)**. Concurrent or repeated tasks cannot reserve
-the same date. Empty selection records `empty` and sends no message.
+with a partial **UNIQUE(user_id, local_date) WHERE status <> 'abandoned'**
+index. Concurrent or repeated tasks cannot reserve the same date while a
+non-abandoned run exists. Empty selection records `empty` and sends no message.
 A nonempty run sends a short summary (up to five top titles), then existing job
 cards with feedback buttons, through `NotificationService`. Progress and summary
 message ID are recorded. Final status is `sent`, `partial` or `failed`.
-An interrupted run can remain `pending`; every status prevents another attempt
-that day. Dates follow the user's timezone, including DST and UTC date rollover.
+An interrupted `pending` run becomes `abandoned` after
+`DIGEST_PENDING_TIMEOUT_MINUTES` (default 30, minimum 11). Recovery preserves
+the old row and permits a new reservation; completed attempts still block that
+date. Digest service execution is bounded to 600 seconds. Dates follow the
+user's timezone, including DST and UTC date rollover.
 
 The existing **UNIQUE(user_id, job_id)** notification reservation is committed
-before each individual message. Existing `sent`, `pending` and `failed` records
-are never sent automatically again. Telegram timeout and DB failure after an
-HTTP send are ambiguous, so this MVP prioritizes avoiding duplicates over
-guaranteed delivery. Summary/individual sends and database writes cannot share
-one atomic transaction. A failed summary or crash can leave today's digest
-incomplete; unattempted jobs stay candidates for a later day. No retry engine or
-daily reservation deletion is performed automatically.
+before each individual message. Connection failures before sending and explicit
+Telegram rejections, including 429, become `retryable`. Telegram `retry_after`
+is stored as `retry_after_until`; an atomic claim allows only one concurrent
+retry. Read/write timeouts and other ambiguous outcomes become `unknown`.
+Existing `sent`, `unknown`, `pending` and legacy `failed` records are never sent
+automatically again. Historical `failed` rows retain their original status
+because their delivery certainty cannot be reconstructed.
+
+A database failure after sending leaves the committed `pending` reservation.
+This MVP prioritizes avoiding duplicate cards over guaranteed delivery in that
+case. A failed summary can leave today's digest incomplete; unattempted jobs
+and retryable cards remain candidates for a later eligible digest within the
+age window. There is no immediate retry queue or automatic retry of completed
+digest runs. Recovering a stale digest does not clear ambiguous notification
+reservations; summaries can repeat after recovery.
 
 ## Preferences, trial and subscriptions
 
@@ -303,9 +319,11 @@ Migration `54383f510932` follows `664c622669e5` and adds:
   selected/sent/failed/skipped counts and last error.
 
 Polling startup and digest dispatch bootstrap missing preferences/subscriptions,
-including the existing owner. Defaults use America/Montevideo, 09:00, score 70,
-10 jobs and a seven-day trial. Inserts use ON CONFLICT DO NOTHING and never reset
-stored preferences or renew an expired trial.
+including the existing owner. Missing rows are discovered with two SELECTs;
+initialized users cause no repeated INSERT or commit. Defaults use
+`SCHEDULER_TIMEZONE`, 09:00, score 70, 10 jobs and a seven-day trial. Bulk inserts
+use ON CONFLICT DO NOTHING and never reset stored preferences or renew an
+expired trial. Existing users retain their separately stored notification timezone.
 
 `EntitlementService.effective(preferences, subscription, now)` centralizes rules:
 
@@ -366,7 +384,7 @@ IDs receive `This command is not available.` without exposing account data.
 | /filters | Show the current shared filter profile and effective digest time/minimum score |
 | /settings | View effective settings and edit timezone, digest time and score |
 | /collect | Owner only: enqueue Remote OK, We Work Remotely and Get on Board collection |
-| /digest | Owner only: enqueue today's digest immediately |
+| /digest | Owner only: check today's state and queue an eligible digest |
 | /stats [24h\|7d\|30d] | Owner only: read historical pipeline statistics; default 7d |
 
 `CommandHandler(...).handle(message)` in `src/bot/commands.py` handles commands.
@@ -378,7 +396,7 @@ are ignored. Commands support a matching `@BotUsername` suffix and ignore comman
 addressed to other bots. The username is obtained once at startup using
 [getMe](https://core.telegram.org/bots/api#getme).
 [getUpdates](https://core.telegram.org/bots/api#getupdates) now requests both
-`message` and `callback_query` updates. Existing offset and callback behavior remains.
+`message` and `callback_query` updates. Both use the persistent polling checkpoint.
 
 `BotQueryRepository` performs read-only status/settings queries. /status lists
 all three registered collectors and their persisted last success, next run and status.
@@ -400,7 +418,7 @@ send_daily_digest.delay(user.id, run_now=True)
 ```
 
 Handlers wait only for publication, never for task completion. Successful
-publication replies `Collection started.` or `Digest started.`; publication
+publication replies `Collection started.` or `Digest queued.`; publication
 errors produce `Failed to start collection.` or `Failed to start digest.`.
 These acknowledgements do not imply the worker has completed the job.
 Replies use plain text. Logs record command categories and sanitized error types,
@@ -409,10 +427,12 @@ replaying a task that may already have been queued.
 
 Manual `run_now=True` bypasses only the local scheduled-time check. It preserves
 active/enabled-user checks, effective filters and threshold, individual delivery
-reservations and the one-attempt-per-local-day constraint. Therefore `/digest`
-can acknowledge dispatch without sending cards if today was already attempted,
-delivery is disabled, or no matching jobs remain. `/status` displays the latest
-attempt status, including `empty`, `partial`, `failed` or `pending`.
+reservations and the one-attempt-per-local-day constraint. `/digest` checks
+today's state before publication and replies `Digest already sent today.`,
+`Digest is already in progress.`, or `Digest already attempted today.` as
+appropriate. Stale pending runs may be queued for recovery. A concurrent
+dispatch is still resolved by the database reservation, so a queued task can
+skip; no matching jobs also means no cards. `/status` shows the latest attempt.
 
 To check manually, start worker, Beat and polling using the commands above, then
 send `/start`, `/help`, `/status`, `/saved` and `/filters` in the owner's
@@ -482,10 +502,20 @@ The handler checks the Telegram sender against an active persisted user, stores
 registered automatically. Repeated presses update one unique user/job row.
 Feedback does not modify notification status or scoring weights.
 
-Polling confirms Telegram offsets on the next request and handles restarts
-idempotently. It uses a fresh database session per callback and a 30-second
-long-poll timeout. Network errors retry after three seconds. Do not run multiple
-pollers for the same token or combine polling with an active webhook.
+Polling loads `telegram:polling:offset` from Redis at startup and saves the next
+offset only after handling an update. Three consecutive handler failures skip
+a logged poison update, allowing later updates to proceed. Redis load/save
+failures pause polling and retry; a save failure does not rerun the handled
+command in the same process. Confirmed `/collect`, `/digest` and callback
+updates are not replayed after restart. A crash between an external side effect
+and checkpoint persistence can still replay an unconfirmed command: Redis and
+Telegram/Celery do not share a transaction. Redis persistence must be enabled
+and its checkpoint retained across restarts.
+
+Polling uses a fresh database session per callback and a 30-second long-poll
+timeout. Network errors retry after three seconds (or Telegram's longer
+`retry_after`). Do not run multiple pollers for the same token or combine
+polling with an active webhook.
 
 ## Checks
 
@@ -500,8 +530,21 @@ Unit tests use fake repositories/clients and standard-library mocks, requiring
 no PostgreSQL, Redis or real Telegram requests. They cover scheduling windows,
 persisted jitter, timezones, daily uniqueness, subscription boundaries, filtering,
 ranking, caps, delivery failures, locks, callbacks and task registration.
-Migrations, broker/worker execution and live Telegram delivery are separate
-manual checks.
+PostgreSQL integration tests run separately with `TEST_DATABASE_URL` pointing
+to a dedicated database using the `postgresql+asyncpg://` scheme:
+
+```bash
+poetry run pytest tests/integration
+```
+
+The fixture creates a unique schema, runs actual Alembic migrations, and drops
+only that schema on completion. Without the variable these tests are skipped.
+GitHub Actions supplies PostgreSQL 16 and runs both suites. Live broker/worker
+and Telegram delivery remain separate manual checks.
+
+Review fixes and migration `49f75b591334` are described in
+[the hardening report](docs/hardening-review-report.md). Run `poetry run alembic upgrade head` before starting the updated services. No historical data rewrite
+or automatic retention cleanup is performed.
 
 
 ## Pipeline statistics
@@ -563,7 +606,10 @@ Rates are fractions in schemas and percentages in Telegram:
 
 - Duplicate rate: duplicates / received; cross-source duplicates are a subset.
 - Filter rejection rate: rejected / candidates in measured digests.
-- Notification success rate: sent / (sent + failed), excluding pending.
+- Notification success rate: sent / (sent + failed + retryable), excluding
+  pending and unknown. Status counts describe the current state of each unique
+  user/job row, not the number of HTTP attempts. Legacy failed rows may include
+  ambiguous historical outcomes.
 - Save/reject rates: feedback / sent notifications. These compare period totals,
   not matched delivery cohorts; feedback on older cards can make rates exceed 100%.
 - New jobs per run: new jobs / (successful + failed runs), excluding skipped/running.
@@ -577,3 +623,19 @@ technologies array. These measure populated fields, not their accuracy or job
 eligibility. Free-form location is not interpreted as remote eligibility.
 No rejection-reason event log, analytics service or automatic scheduler tuning
 is introduced. See [the implementation and data audit](docs/statistics-stage-report.md).
+
+## MVP boundaries and retention
+
+This is an owner-oriented MVP. Delivery preferences and notification history
+are per user, but the filter profile is shared and `/start` does not implement
+general self-service onboarding. Full multi-user filter persistence is deferred.
+
+Remote OK reads at most 8 MiB of response data, treats naive dates as UTC, and
+reports parsed Retry-After cooldowns without an immediate retry loop. Technology
+aliases are shared across normalization/filtering/scoring; C, C++ and C# remain
+distinct. User timezone offsets include fractional hours and current-date DST.
+
+No data is deleted automatically. See the hardening report for proposed jobs
+and collector-run retention, and criteria for introducing per-user evaluation
+caching. Linux deployments and Ubuntu CI use system timezone data; add `tzdata`
+when adopting Windows or a slim runtime image without that system database.

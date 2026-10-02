@@ -1,7 +1,7 @@
 import logging
 import re
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from src.bot.client import TelegramAPIError, TelegramClient
@@ -310,6 +310,33 @@ class CommandHandler:
             await self._reply(chat_id, message)
 
     async def _admin(self, command: str, user_id: int, chat_id: int) -> None:
+        if command == "digest":
+            from src.config import settings
+
+            effective = await self._effective(user_id)
+            run = await self.queries.last_digest(user_id)
+            now = self.clock()
+            local_date = now.astimezone(
+                ZoneInfo(effective.timezone if effective else "UTC")
+            ).date()
+            if (
+                run is not None
+                and run.local_date == local_date
+                and run.status != "abandoned"
+            ):
+                stale = (
+                    run.status == "pending"
+                    and run.started_at is not None
+                    and run.started_at
+                    < now - timedelta(minutes=settings.DIGEST_PENDING_TIMEOUT_MINUTES)
+                )
+                if not stale:
+                    response = {
+                        "sent": "Digest already sent today.",
+                        "pending": "Digest is already in progress.",
+                    }.get(run.status, "Digest already attempted today.")
+                    await self._reply(chat_id, response)
+                    return
         action = "collection" if command == "collect" else "digest"
         logger.info("Admin %s requested", action)
         try:
@@ -321,4 +348,7 @@ class CommandHandler:
             logger.error("Failed to dispatch %s (%s)", action, type(exc).__name__)
             await self._reply(chat_id, f"Failed to start {action}.")
             return
-        await self._reply(chat_id, f"{action.capitalize()} started.")
+        await self._reply(
+            chat_id,
+            ("Collection started." if command == "collect" else "Digest queued."),
+        )

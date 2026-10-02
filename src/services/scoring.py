@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
-from zoneinfo import ZoneInfo
 
 from src.schemas.filters import UserFilterDTO
 from src.schemas.job import JobDTO
 from src.schemas.scoring import ScoreResult
+from src.services.timezones import user_utc_offset
+from src.services.tokens import normalize_technology
 
 BASE_SCORE = 50
 
@@ -73,7 +73,7 @@ class ScoringService:
     def _normalize_token(value: str | None) -> str | None:
         if value is None:
             return None
-        cleaned = re.sub(r"[^a-z0-9]+", "", str(value).lower())
+        cleaned = str(value).strip().lower()
         return cleaned or None
 
     @staticmethod
@@ -88,34 +88,22 @@ class ScoringService:
             return
         items.append(value)
 
-    @staticmethod
-    def _get_user_timezone_offset(timezone_name: str) -> int | None:
-        try:
-            zone = ZoneInfo(timezone_name)
-        except Exception:
-            return None
-
-        now = datetime.now(zone)
-        offset = now.utcoffset()
-        if offset is None:
-            return None
-        return int(offset.total_seconds() // 3600)
+    _get_user_timezone_offset = staticmethod(user_utc_offset)
 
     @staticmethod
     def _infer_years_of_experience(description: str | None) -> int | None:
         if not description:
             return None
 
-        patterns = [
-            r"(?:at\s+least|minimum|min\s+|requires?\s+|require\s+)?(?P<years>\d+)\+?\s*(?:years?|yrs?)\s*(?:of\s+)?(?:professional\s+)?(?:experience)?",
-            r"(?:at\s+least|minimum|min\s+|requires?\s+|require\s+)?(?P<years>\d+)\s*(?:years?|yrs?)\s*(?:of\s+)?(?:professional\s+)?(?:experience)?",
+        # Require explicit experience context; do not match company/product age.
+        pattern = (
+            r"(?<![\w.])(?P<years>\d+)\+?\s*(?:years?|yrs?)\s+"
+            r"(?:of\s+)?(?:[a-z+#]+\s+){0,3}experience\b"
+        )
+        found = [
+            int(match.group("years"))
+            for match in re.finditer(pattern, description, flags=re.IGNORECASE)
         ]
-
-        found: list[int] = []
-        for pattern in patterns:
-            for match in re.finditer(pattern, description, flags=re.IGNORECASE):
-                value = int(match.group("years"))
-                found.append(value)
 
         if not found:
             return None
@@ -143,7 +131,7 @@ class ScoringService:
 
     @classmethod
     def _technology_label(cls, technology: str) -> str:
-        canonical = cls._normalize_token(technology)
+        canonical = normalize_technology(technology)
         if canonical is None:
             return technology
         return TECHNOLOGY_LABELS.get(canonical, canonical.title())
@@ -160,7 +148,7 @@ class ScoringService:
         seen_technologies: set[str] = set()
 
         for technology in job.technologies:
-            canonical = cls._normalize_token(technology)
+            canonical = normalize_technology(technology)
             if canonical is None or canonical in seen_technologies:
                 continue
             seen_technologies.add(canonical)
@@ -175,7 +163,7 @@ class ScoringService:
         preferred_bonus_total = 0
         preferred_hits: list[str] = []
         for technology in filters.preferred_technologies:
-            canonical = cls._normalize_token(technology)
+            canonical = normalize_technology(technology)
             if canonical is None or canonical not in seen_technologies:
                 continue
             preferred_bonus_total += PREFERRED_TECH_BONUS
@@ -298,17 +286,25 @@ class ScoringService:
                 abs(user_offset - vacancy_min),
                 abs(user_offset - vacancy_max),
             )
-            if distance == 1:
-                cls._append_unique(matched_rules, "Timezone distance: 1 hour: +7")
+            if distance <= 1:
+                cls._append_unique(
+                    matched_rules, f"Timezone distance: {distance:g} hour(s): +7"
+                )
                 return 7
-            if distance == 2:
-                cls._append_unique(matched_rules, "Timezone distance: 2 hours: +4")
+            if distance <= 2:
+                cls._append_unique(
+                    matched_rules, f"Timezone distance: {distance:g} hours: +4"
+                )
                 return 4
-            if distance == 3:
-                cls._append_unique(matched_rules, "Timezone distance: 3 hours: 0")
+            if distance <= 3:
+                cls._append_unique(
+                    matched_rules, f"Timezone distance: {distance:g} hours: 0"
+                )
                 return 0
-            if distance == 4:
-                cls._append_unique(penalties, "Timezone distance: 4 hours: -10")
+            if distance <= 4:
+                cls._append_unique(
+                    penalties, f"Timezone distance: {distance:g} hours: -10"
+                )
                 return -10
             cls._append_unique(penalties, "Timezone distance: 5+ hours: -20")
             return -20

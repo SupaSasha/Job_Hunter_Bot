@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.notification import NotificationORM
@@ -36,9 +36,30 @@ class NotificationRepository:
             )
         )
 
-    async def mark_failed(self, notification_id: int) -> None:
+    async def claim_retryable(self, notification_id: int, now: datetime) -> int | None:
+        return await self.session.scalar(
+            update(NotificationORM)
+            .where(
+                NotificationORM.id == notification_id,
+                NotificationORM.status == "retryable",
+                or_(
+                    NotificationORM.retry_after_until.is_(None),
+                    NotificationORM.retry_after_until <= now,
+                ),
+            )
+            .values(status="pending", retry_after_until=None)
+            .returning(NotificationORM.id)
+        )
+
+    async def mark_failed(
+        self,
+        notification_id: int,
+        *,
+        status: str = "failed",
+        retry_after_until: datetime | None = None,
+    ) -> None:
         await self.session.execute(
             update(NotificationORM)
             .where(NotificationORM.id == notification_id)
-            .values(status="failed")
+            .values(status=status, retry_after_until=retry_after_until)
         )

@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,10 +22,12 @@ class JobRepository:
             )
         )
 
-    async def get_by_fingerprint(self, fingerprint: str) -> JobORM | None:
+    async def get_by_fingerprint(
+        self, fingerprint: str, *, since: datetime
+    ) -> JobORM | None:
         return await self.session.scalar(
             select(JobORM)
-            .where(JobORM.fingerprint == fingerprint)
+            .where(JobORM.fingerprint == fingerprint, JobORM.collected_at >= since)
             .order_by(JobORM.id)
             .limit(1)
         )

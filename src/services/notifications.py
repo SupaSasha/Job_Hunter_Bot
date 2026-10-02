@@ -1,3 +1,5 @@
+from datetime import UTC, datetime, timedelta
+
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,7 +14,7 @@ from src.schemas.scoring import ScoreResult
 
 
 class NotificationService:
-    """Own transactions in a dedicated session; never retry an existing attempt.
+    """Own transactions in a dedicated session; retry only explicit rejections.
 
     A durable pending row reserves delivery before HTTP. After an ambiguous
     timeout or a crash, delivery may have happened; automatic retries are unsafe.
@@ -29,6 +31,8 @@ class NotificationService:
             "sent": "already_sent",
             "pending": "already_pending",
             "failed": "previous_failed",
+            "unknown": "delivery_unknown",
+            "retryable": "retry_not_claimed",
         }
         return NotificationResult(
             sent=False,
@@ -46,18 +50,29 @@ class NotificationService:
         user_id, chat_id = user.id, user.telegram_id
         try:
             existing = await self.repository.get_by_user_job(user_id, job_id)
-            if existing is not None:
-                result = self._existing_result(existing)
-                await self.session.rollback()
-                return result
             message = format_job_message(job, score)
             keyboard = build_job_keyboard(job_id, job.url)
-            notification = await self.repository.add(
-                NotificationORM(
-                    user_id=user_id, job_id=job_id, score=score.score, status="pending"
+            if existing is not None:
+                result = self._existing_result(existing)
+                if existing.status != "retryable":
+                    await self.session.rollback()
+                    return result
+                notification_id = await self.repository.claim_retryable(
+                    existing.id, datetime.now(UTC)
                 )
-            )
-            notification_id = notification.id
+                if notification_id is None:
+                    await self.session.rollback()
+                    return result
+            else:
+                notification = await self.repository.add(
+                    NotificationORM(
+                        user_id=user_id,
+                        job_id=job_id,
+                        score=score.score,
+                        status="pending",
+                    )
+                )
+                notification_id = notification.id
             await self.session.commit()
         except IntegrityError as exc:
             await self.session.rollback()
@@ -85,7 +100,15 @@ class NotificationService:
                     chat_id, message, reply_markup=keyboard
                 )
             except Exception as exc:
-                await self.repository.mark_failed(notification_id)
+                retryable = isinstance(exc, TelegramAPIError) and exc.retryable
+                retry_at = None
+                if retryable and exc.retry_after is not None:
+                    retry_at = datetime.now(UTC) + timedelta(seconds=exc.retry_after)
+                await self.repository.mark_failed(
+                    notification_id,
+                    status="retryable" if retryable else "unknown",
+                    retry_after_until=retry_at,
+                )
                 await self.session.commit()
                 if isinstance(exc, TelegramAPIError):
                     return NotificationResult(

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
-from zoneinfo import ZoneInfo
-
 from src.schemas.filters import FilterResult, UserFilterDTO
 from src.schemas.job import JobDTO
+from src.services.timezones import user_utc_offset
+from src.services.tokens import normalize_technology
 
 
 class FilterService:
@@ -36,23 +35,12 @@ class FilterService:
 
         return allowed
 
-    @staticmethod
-    def _get_user_timezone_offset(timezone_name: str) -> int | None:
-        try:
-            zone = ZoneInfo(timezone_name)
-        except Exception:
-            return None
-
-        now = datetime.now(zone)
-        offset = now.utcoffset()
-        if offset is None:
-            return None
-        return int(offset.total_seconds() // 3600)
+    _get_user_timezone_offset = staticmethod(user_utc_offset)
 
     @staticmethod
     def _has_intersection(
-        user_min: int,
-        user_max: int,
+        user_min: float,
+        user_max: float,
         vacancy_min: int,
         vacancy_max: int,
     ) -> bool:
@@ -75,25 +63,25 @@ class FilterService:
 
         if filters.excluded_technologies:
             excluded = {
-                self._normalize_token(item)
+                normalize_technology(item)
                 for item in filters.excluded_technologies
-                if self._normalize_token(item)
+                if normalize_technology(item)
             }
             for technology in job.technologies:
-                normalized = self._normalize_token(technology)
+                normalized = normalize_technology(technology)
                 if normalized in excluded:
                     reasons.append(f"Excluded technology: {normalized}")
 
         if filters.required_technologies:
             required = {
-                self._normalize_token(item)
+                normalize_technology(item)
                 for item in filters.required_technologies
-                if self._normalize_token(item)
+                if normalize_technology(item)
             }
             job_technologies = {
-                self._normalize_token(item)
+                normalize_technology(item)
                 for item in job.technologies
-                if self._normalize_token(item)
+                if normalize_technology(item)
             }
             for technology in sorted(required):
                 if technology not in job_technologies:

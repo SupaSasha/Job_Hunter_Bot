@@ -20,7 +20,7 @@ class NotificationORM(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "job_id", name="uq_notifications_user_job"),
         CheckConstraint(
-            "status IN ('pending', 'sent', 'failed')",
+            "status IN ('pending', 'sent', 'failed', 'retryable', 'unknown')",
             name="ck_notifications_status",
         ),
     )
@@ -34,6 +34,7 @@ class NotificationORM(Base):
     )
     telegram_message_id: Mapped[int | None] = mapped_column(BigInteger)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    retry_after_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

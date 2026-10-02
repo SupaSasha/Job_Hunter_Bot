@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     REDIS_PORT: int = Field(default=6379, ge=1, le=65535)
     REDIS_DB: int = Field(default=0, ge=0)
     SCHEDULER_TIMEZONE: str = "America/Montevideo"
+    DIGEST_JOB_MAX_AGE_DAYS: int = Field(default=7, ge=1)
+    DIGEST_CANDIDATE_LIMIT: int = Field(default=1000, ge=1)
+    DIGEST_PENDING_TIMEOUT_MINUTES: int = Field(default=30, ge=11)
     TRIAL_DAYS: int = Field(default=7, ge=1)
     FREE_DIGEST_TIME: time = time(9)
     FREE_MIN_SCORE: int = Field(default=70, ge=0, le=100)

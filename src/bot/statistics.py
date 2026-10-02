@@ -52,6 +52,7 @@ def format_statistics(stats: BotStats) -> list[str]:
             f"Measured: {digest.measured_runs} | "
             f"Unmeasured: {digest.unmeasured_runs}",
             f"Failed runs: {digest.failed_runs} | Pending: {digest.pending_runs}",
+            f"Abandoned runs: {digest.abandoned_runs}",
             f"Candidates: {measured(digest.candidate_count)}",
             f"Rejected by filters: {measured(digest.filter_rejected_count)}",
             f"Accepted: {measured(digest.accepted_count)}",
@@ -75,6 +76,8 @@ def format_statistics(stats: BotStats) -> list[str]:
             f"Sent: {stats.notifications.sent_count} | "
             f"Failed: {stats.notifications.failed_count} | "
             f"Pending: {stats.notifications.pending_count}",
+            f"Retryable: {stats.notifications.retryable_count} | "
+            f"Unknown: {stats.notifications.unknown_count}",
             "",
             "Feedback (latest updates in period)",
             f"Saved: {stats.feedback.saved_count} | "

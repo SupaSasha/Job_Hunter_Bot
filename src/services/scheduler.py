@@ -35,12 +35,13 @@ class SchedulerService:
 
     async def dispatch_digests(self, now: datetime | None = None) -> int:
         now = now or datetime.now(UTC)
+        await self.digests.recover_stale(now)
         dispatched = 0
         for user, preferences, subscription in await self.digests.users():
             try:
                 effective = self.entitlements.effective(preferences, subscription, now)
                 local_date = now.astimezone(ZoneInfo(effective.timezone)).date()
-                if not digest_due(effective, now, set()):
+                if not digest_due(effective, now):
                     continue
                 if await self.digests.attempted(user.id, local_date):
                     continue

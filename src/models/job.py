@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, Text, UniqueConstraint, func, text
+from sqlalchemy import DateTime, Index, String, Text, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -11,6 +11,8 @@ class JobORM(Base):
     __tablename__ = "jobs"
     __table_args__ = (
         UniqueConstraint("source", "external_id", name="uq_jobs_source_external_id"),
+        Index("ix_jobs_collected_at", "collected_at"),
+        Index("ix_jobs_fingerprint_collected_at", "fingerprint", "collected_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

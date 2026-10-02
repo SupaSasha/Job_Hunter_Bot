@@ -100,7 +100,9 @@ class StatisticsService:
             ),
             notification_success_rate=ratio(
                 notifications.sent_count,
-                notifications.sent_count + notifications.failed_count,
+                notifications.sent_count
+                + notifications.failed_count
+                + notifications.retryable_count,
             ),
             save_rate=ratio(feedback.saved_count, notifications.sent_count),
             reject_rate=ratio(feedback.rejected_count, notifications.sent_count),

@@ -269,3 +269,46 @@ async def test_edit_rejects_boolean_message_id():
     ) as client:
         with pytest.raises(TelegramAPIError, match="invalid edited message"):
             await client.edit_message_text(123, 1, "Settings")
+
+
+@pytest.mark.parametrize(
+    "error,retryable",
+    [
+        (httpx.ConnectError, True),
+        (httpx.ConnectTimeout, True),
+        (httpx.PoolTimeout, True),
+        (httpx.ReadTimeout, False),
+        (httpx.WriteTimeout, False),
+        (httpx.ReadError, False),
+    ],
+)
+async def test_delivery_certainty_for_transport_failures(error, retryable):
+    def handler(request):
+        raise error("private", request=request)
+
+    async with TelegramClient(TOKEN, transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(TelegramAPIError) as caught:
+            await client.send_message(1, "test")
+    assert caught.value.retryable is retryable
+
+
+@pytest.mark.parametrize(
+    "http_status,code,retryable",
+    [
+        (429, 429, True),
+        (400, 400, True),
+        (403, 403, True),
+        (500, 500, False),
+        (200, 429, True),
+    ],
+)
+async def test_rejected_delivery_and_retry_after(http_status, code, retryable):
+    body = {"ok": False, "error_code": code, "parameters": {"retry_after": 17}}
+    async with TelegramClient(
+        TOKEN,
+        transport=httpx.MockTransport(lambda _: httpx.Response(http_status, json=body)),
+    ) as client:
+        with pytest.raises(TelegramAPIError) as caught:
+            await client.send_message(1, "test")
+    assert caught.value.retryable is retryable
+    assert caught.value.retry_after == (17 if code == 429 else None)

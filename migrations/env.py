@@ -43,7 +43,9 @@ async def run_async_migrations() -> None:
         await connectable.dispose()
 
 
-if context.is_offline_mode():
+if config.attributes.get("connection") is not None:
+    do_run_migrations(config.attributes["connection"])
+elif context.is_offline_mode():
     run_migrations_offline()
 else:
     asyncio.run(run_async_migrations())

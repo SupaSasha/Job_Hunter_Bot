@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, patch
+from unittest.mock import ANY, AsyncMock, patch
 
 import pytest
 
@@ -110,7 +110,7 @@ async def test_fingerprint_duplicate() -> None:
     assert result.reason == "fingerprint"
     assert result.existing_job_id == 43
     repository.get_by_fingerprint.assert_awaited_once_with(
-        DeduplicationService.calculate_fingerprint(job)
+        DeduplicationService.calculate_fingerprint(job), since=ANY
     )
     assert [call[0] for call in repository.mock_calls] == [
         "get_by_source_external_id",
@@ -187,8 +187,34 @@ async def test_fingerprint_duplicate_marks_cross_source(existing_source, expecte
         source="remoteok",
         external_id="1",
         title="Developer",
+        company="Acme",
         url="https://example.com/job",
     )
     result = await DeduplicationService(repository).check(job)
     assert result.reason == "fingerprint"
     assert result.cross_source_duplicate is expected
+
+
+@pytest.mark.parametrize("company", [None, "", "   "])
+async def test_missing_company_never_uses_title_fingerprint(company):
+    repo = AsyncMock(spec=JobRepository)
+    repo.get_by_source_external_id.return_value = None
+    service = DeduplicationService(repo)
+    for source in ["remoteok", "getonboard"]:
+        result = await service.check(build_job(source=source, company=company))
+        assert not result.is_duplicate
+        assert result.fingerprint
+    repo.get_by_fingerprint.assert_not_awaited()
+
+
+async def test_fingerprint_lookup_passes_30_day_window():
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime(2026, 10, 2, tzinfo=UTC)
+    repo = AsyncMock(spec=JobRepository)
+    repo.get_by_source_external_id.return_value = None
+    repo.get_by_fingerprint.return_value = None
+    await DeduplicationService(repo, clock=lambda: now).check(build_job())
+    assert repo.get_by_fingerprint.call_args.kwargs == {
+        "since": now - timedelta(days=30)
+    }

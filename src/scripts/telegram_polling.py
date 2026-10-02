@@ -1,11 +1,13 @@
 import asyncio
 import logging
 
+from redis.asyncio import Redis
+
 from src.bot.callbacks import CallbackHandler
 from src.bot.client import TelegramClient
 from src.bot.commands import HELP, CommandHandler
 from src.bot.dispatch import CeleryCommandDispatcher
-from src.bot.polling import poll_updates
+from src.bot.polling import RedisOffsetStore, poll_updates
 from src.bot.settings import SettingsHandler
 from src.bot.updates import route_update
 from src.config import settings
@@ -85,7 +87,10 @@ async def main() -> None:
                     )
 
             logger.info("Telegram command and callback polling started")
-            await poll_updates(client, handle_update)
+            async with Redis.from_url(settings.REDIS_URL) as redis:
+                await poll_updates(
+                    client, handle_update, offset_store=RedisOffsetStore(redis)
+                )
     finally:
         await engine.dispose()
 

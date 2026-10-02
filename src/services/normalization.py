@@ -3,32 +3,11 @@ from __future__ import annotations
 import re
 
 from src.schemas.job import JobDTO
+from src.services.tokens import normalize_technology
 
 
 class NormalizationService:
     """Normalize job data into a stable project-wide canonical form."""
-
-    TECHNOLOGY_ALIASES = {
-        "python": "python",
-        "fast api": "fastapi",
-        "fastapi": "fastapi",
-        "postgres": "postgresql",
-        "postgresql": "postgresql",
-        "postgre sql": "postgresql",
-        "redis": "redis",
-        "celery": "celery",
-        "docker": "docker",
-        "kubernetes": "kubernetes",
-        "k8s": "kubernetes",
-        "javascript": "javascript",
-        "js": "javascript",
-        "typescript": "typescript",
-        "ts": "typescript",
-        "nodejs": "nodejs",
-        "node js": "nodejs",
-        "node.js": "nodejs",
-        "node": "nodejs",
-    }
 
     REMOTE_REGION_ALIASES = {
         "worldwide": "worldwide",
@@ -97,22 +76,7 @@ class NormalizationService:
         collapsed = re.sub(r"\s+", " ", value.strip())
         return collapsed or None
 
-    @classmethod
-    def _canonicalize_technology(cls, value: str) -> str:
-        normalized = cls._collapse_spaces(value)
-        if normalized is None:
-            return ""
-
-        lowered = normalized.lower().replace("_", " ")
-        lowered = lowered.replace(".", " ")
-        lowered = lowered.replace("-", " ")
-        lowered = re.sub(r"[^a-z0-9\s]+", " ", lowered)
-        lowered = re.sub(r"\s+", " ", lowered).strip()
-        if not lowered:
-            return ""
-        if lowered in cls.TECHNOLOGY_ALIASES:
-            return cls.TECHNOLOGY_ALIASES[lowered]
-        return lowered.replace(" ", "")
+    _canonicalize_technology = staticmethod(normalize_technology)
 
     @classmethod
     def _normalize_technologies(cls, technologies: list[str] | None) -> list[str]:

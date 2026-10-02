@@ -6,11 +6,17 @@ from src.tasks.celery_app import celery_app
 from src.tasks.runtime import task_resources
 
 
-async def collect_remoteok_async(expected_next_run: str | None = None) -> dict:
+async def collect_source_async(
+    source: str, expected_next_run: str | None = None
+) -> dict:
     async with task_resources() as (sessions, redis):
         return await CollectionService(
             sessions, redis, settings.SCHEDULER_TIMEZONE
-        ).collect_remoteok(expected_next_run)
+        ).collect(source, expected_next_run)
+
+
+async def collect_remoteok_async(expected_next_run: str | None = None) -> dict:
+    return await collect_source_async("remoteok", expected_next_run)
 
 
 @celery_app.task(name="jobs.collect_remoteok")
@@ -19,10 +25,7 @@ def collect_remoteok(expected_next_run: str | None = None) -> dict:
 
 
 async def collect_weworkremotely_async(expected_next_run: str | None = None) -> dict:
-    async with task_resources() as (sessions, redis):
-        return await CollectionService(
-            sessions, redis, settings.SCHEDULER_TIMEZONE
-        ).collect("weworkremotely", expected_next_run)
+    return await collect_source_async("weworkremotely", expected_next_run)
 
 
 @celery_app.task(name="jobs.collect_weworkremotely")
@@ -31,10 +34,7 @@ def collect_weworkremotely(expected_next_run: str | None = None) -> dict:
 
 
 async def collect_getonboard_async(expected_next_run: str | None = None) -> dict:
-    async with task_resources() as (sessions, redis):
-        return await CollectionService(
-            sessions, redis, settings.SCHEDULER_TIMEZONE
-        ).collect("getonboard", expected_next_run)
+    return await collect_source_async("getonboard", expected_next_run)
 
 
 @celery_app.task(name="jobs.collect_getonboard")

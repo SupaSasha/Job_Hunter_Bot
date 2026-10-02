@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import UTC, date, datetime
 from typing import Callable
@@ -81,6 +82,13 @@ class DailyDigestService:
     async def send(
         self, user_id: int, expected_date: str | None = None, *, run_now: bool = False
     ) -> dict:
+        # Recovery timeout is always longer than the maximum worker/service lifetime.
+        async with asyncio.timeout(600):
+            return await self._send(user_id, expected_date, run_now=run_now)
+
+    async def _send(
+        self, user_id: int, expected_date: str | None = None, *, run_now: bool = False
+    ) -> dict:
         now = self.clock()
         users = await self.repository.users(user_id)
         if not users:
@@ -94,7 +102,7 @@ class DailyDigestService:
             return {"status": "skipped", "reason": "stale_date"}
         if not effective.digest_enabled:
             return {"status": "skipped", "reason": "inactive_or_disabled"}
-        if not run_now and not digest_due(effective, now, set()):
+        if not run_now and not digest_due(effective, now):
             return {"status": "skipped", "reason": "not_due"}
         if self.client is None:
             return {"status": "skipped", "reason": "telegram_not_configured"}
@@ -104,7 +112,7 @@ class DailyDigestService:
         selected = sent = failed = skipped = 0
         metrics = DigestMetrics()
         try:
-            candidates = await self.repository.candidates(user_id)
+            candidates = await self.repository.candidates(user_id, now=now)
             items = select_digest_jobs(
                 candidates,
                 default_user_filters(effective.timezone),

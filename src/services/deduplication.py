@@ -1,15 +1,22 @@
 import hashlib
 import json
 import re
+from datetime import UTC, datetime, timedelta
+from typing import Callable
 
 from src.repositories.jobs import JobRepository
 from src.schemas.deduplication import DeduplicationResult
 from src.schemas.job import JobDTO
 
+FINGERPRINT_DEDUP_WINDOW_DAYS = 30
+
 
 class DeduplicationService:
-    def __init__(self, repository: JobRepository) -> None:
+    def __init__(
+        self, repository: JobRepository, *, clock: Callable = lambda: datetime.now(UTC)
+    ) -> None:
         self.repository = repository
+        self.clock = clock
 
     @staticmethod
     def _canonicalize(value: str | None) -> str:
@@ -41,7 +48,12 @@ class DeduplicationService:
             )
 
         fingerprint = self.calculate_fingerprint(job)
-        existing = await self.repository.get_by_fingerprint(fingerprint)
+        if not self._canonicalize(job.company):
+            return DeduplicationResult(is_duplicate=False, fingerprint=fingerprint)
+        existing = await self.repository.get_by_fingerprint(
+            fingerprint,
+            since=self.clock() - timedelta(days=FINGERPRINT_DEDUP_WINDOW_DAYS),
+        )
         if existing is not None:
             return DeduplicationResult(
                 is_duplicate=True,

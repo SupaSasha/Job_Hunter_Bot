@@ -57,9 +57,7 @@ def handler():
         )
     ]
     queries.job_count.return_value = 428
-    queries.last_digest.return_value = DigestRunORM(
-        local_date=date(2026, 9, 28), status="sent"
-    )
+    queries.last_digest.return_value = None
     feedback = AsyncMock(spec=FeedbackRepository)
     feedback.get_saved_jobs_for_user.return_value = []
     return CommandHandler(
@@ -104,6 +102,9 @@ async def test_help_lists_all_commands(handler):
 
 
 async def test_status_uses_real_values_and_local_timezone(handler):
+    handler.queries.last_digest.return_value = DigestRunORM(
+        local_date=date(2026, 9, 28), status="sent"
+    )
     await handler.handle(message("/status"))
     text = reply(handler)
     for value in (
@@ -227,7 +228,10 @@ async def test_missing_preferences_are_not_invented(handler):
     "command,expected",
     [
         ("collect", "Collection started."),
-        ("digest", "Digest started."),
+        (
+            "digest",
+            "Digest queued.",
+        ),
     ],
 )
 async def test_owner_dispatches_without_waiting_for_worker(handler, command, expected):
@@ -504,3 +508,29 @@ def test_historical_digests_do_not_appear_as_measured_zeroes():
     assert "Candidates: N/A" in text
     assert "90–100: N/A" in text
     assert "Selected: 2 | Sent: 2" in text
+
+
+@pytest.mark.parametrize(
+    "status,response",
+    [
+        ("sent", "Digest already sent today."),
+        ("pending", "Digest is already in progress."),
+        ("empty", "Digest already attempted today."),
+    ],
+)
+async def test_manual_digest_reports_existing_attempt(handler, status, response):
+    handler.queries.last_digest.return_value = DigestRunORM(
+        local_date=NOW.date(), status=status, started_at=NOW
+    )
+    await handler.handle(message("/digest"))
+    assert reply(handler) == response
+    handler.dispatcher.digest.assert_not_awaited()
+
+
+async def test_manual_digest_can_recover_stale_attempt(handler):
+    handler.queries.last_digest.return_value = DigestRunORM(
+        local_date=NOW.date(), status="pending", started_at=NOW - timedelta(hours=1)
+    )
+    await handler.handle(message("/digest"))
+    handler.dispatcher.digest.assert_awaited_once_with(7)
+    assert "queued" in reply(handler)

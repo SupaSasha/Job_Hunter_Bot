@@ -44,6 +44,7 @@ class DigestStats(DigestMetrics):
     unmeasured_runs: int = 0
     failed_runs: int = 0
     pending_runs: int = 0
+    abandoned_runs: int = 0
     selected_count: int = 0
     sent_count: int = 0
     failed_count: int = 0
@@ -56,6 +57,8 @@ class FeedbackStats(BaseModel):
 
 
 class NotificationStats(BaseModel):
+    retryable_count: int = 0
+    unknown_count: int = 0
     sent_count: int = 0
     failed_count: int = 0
     pending_count: int = 0
