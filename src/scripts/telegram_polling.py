@@ -25,6 +25,7 @@ from src.services.feedback import FeedbackService
 from src.services.notification_settings import NotificationSettingsService
 from src.services.statistics import StatisticsService
 from src.services.user_filters import UserFilterService
+from src.services.user_language import UserLanguageService
 from src.services.users import OwnerService
 from src.tasks.jobs import COLLECTOR_TASKS
 from src.tasks.notifications import send_daily_digest
@@ -71,6 +72,7 @@ async def main() -> None:
                         NotificationSettingsService(session, entitlements),
                         client,
                         help_text=HELP,
+                        languages=UserLanguageService(session),
                     )
                     filters_handler = FiltersHandler(
                         UserRepository(session),
@@ -89,6 +91,7 @@ async def main() -> None:
                         bot_username=bot_username,
                         settings_handler=settings_handler,
                         filters_handler=filters_handler,
+                        languages=UserLanguageService(session),
                         statistics=StatisticsService(
                             StatisticsRepository(session), entitlements
                         ),

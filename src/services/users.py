@@ -1,6 +1,7 @@
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.i18n import initial_language
 from src.models.user import UserORM
 from src.repositories.users import UserRepository
 
@@ -12,11 +13,18 @@ class OwnerService:
         self.session = session
         self.repository = UserRepository(session)
 
-    async def get_or_create(self, telegram_id: int) -> UserORM:
+    async def get_or_create(
+        self, telegram_id: int, *, language_code: object = None
+    ) -> UserORM:
         try:
             user = await self.repository.get_by_telegram_id(telegram_id)
             if user is None:
-                user = await self.repository.add(UserORM(telegram_id=telegram_id))
+                user = await self.repository.add(
+                    UserORM(
+                        telegram_id=telegram_id,
+                        language=initial_language(language_code).value,
+                    )
+                )
             await self.session.commit()
             return user
         except IntegrityError as exc:

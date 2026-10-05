@@ -370,21 +370,23 @@ effective defaults, then restore it; no need to wait seven days.
 
 ## Telegram commands
 
-Commands are handled in private chats. Public `/start` and `/help` do not register
-arbitrary users. Startup reuses `OwnerService.get_or_create` for the configured
-owner and initializes missing delivery settings through the existing bootstrap.
+Commands are handled in private chats. `/start` creates a minimal user profile
+and offers a language picker for new users. `/help` does not register accounts.
+Registration reuses owner/user bootstrap and missing-only delivery defaults,
+without overwriting settings or renewing an existing trial. Startup still reuses
+`OwnerService.get_or_create` for the configured owner.
 Data commands require an existing active user. Groups and mismatched sender/chat
 IDs receive `This command is not available.` without exposing account data.
 
 | Command | Behavior |
 | --- | --- |
-| /start | Show the introduction |
+| /start | New users: choose a language; existing users: show a localized introduction |
 | /help | List public commands; show a separate admin section to the owner |
 | /status | Read collector state, total jobs, effective digest settings and the user's latest digest attempt from PostgreSQL |
 | /saved | Show up to ten most recently saved jobs, without descriptions |
 | /filters | Configure persisted job search filters with inline menus and text input |
 | /cancel | Cancel pending filter input |
-| /settings | View effective settings and edit timezone, digest time and score |
+| /settings | Choose English/Español; view notification settings and edit timezone, digest time and score |
 | /collect | Owner only: enqueue Remote OK, We Work Remotely and Get on Board collection |
 | /digest | Owner only: check today's state and queue an eligible digest |
 | /stats [24h\|7d\|30d] | Owner only: read historical pipeline statistics; default 7d |
@@ -458,7 +460,7 @@ cancel - Cancel current input
 ## Telegram settings
 
 /settings is available to every registered active user in their private chat.
-The menu shows effective timezone, daily digest time, minimum match score, and
+The menu shows saved interface language, effective timezone, daily digest time, minimum match score, and
 Trial/Premium/Free plan. An active trial also shows its end date in the user's
 local timezone. Only the owner sees /collect, /digest and /stats in the admin section
 of /help; these commands are excluded from the public BotFather menu.
@@ -498,6 +500,78 @@ original subscription and preferences. Do not change production subscriptions.
 See [the settings stage report](docs/telegram-settings-report.md) for examples
 and validation results.
 
+## Telegram interface language
+
+English (`en`) and Español (`es`) are persisted in `users.language`, with
+English as the default for existing users. Migration `e93b6472a105` adds the
+NOT NULL field, a constant English server default and an allowed-language
+constraint; it follows `c41a9e327b60`. Apply Alembic before running the updated
+application. The initialized production update command remains
+`./scripts/deploy.sh`; it excludes `.env` and keeps database/Redis volumes.
+This language stage does not automatically deploy, commit or push.
+
+New /start users receive a bilingual language picker. Telegram language_code
+starting with `es` initializes Spanish only on creation; every other code
+initializes English. Existing profiles always use the saved choice, even when
+Telegram's locale differs. /settings → Language/Idioma offers both languages
+for Free, Trial and Premium. Selecting one persists it, acknowledges the
+callback, and immediately redraws settings in that language. Commands and
+callback data remain unchanged, including `settings:language:en` and
+`settings:language:es`. The original owner-only /digest, /collect and /stats
+permissions remain in force.
+
+`src/i18n` contains a Language enum, English/Spanish dictionaries, the public
+`t(key, language, **params)` translator, display label helpers and a presentation
+adapter for existing scoring explanations. The catalogs contain 235 keys each;
+tests enforce key and interpolation-parameter parity. Missing Spanish keys fall
+back to English. Missing English keys raise TranslationError rather than being
+shown to users. No external translation service or new dependency is used.
+
+Commands, filters, notification settings, pending input prompts/errors,
+subscription labels, status, saved jobs, digest summaries, job card labels and
+feedback buttons/replies use the saved locale. Technical /stats output may
+remain English for the owner; its command replies/errors are localized.
+Vacancy titles, companies, descriptions, currencies, technologies, URLs,
+source brands and canonical filter values are not translated. Language changes
+neither selection nor scoring, scheduling, salary rules, trials or reservations.
+An already empty digest can be reported in the user's language by /digest;
+empty scheduled digests keep their existing no-message behavior.
+
+BotFather descriptions are configured manually, with unchanged command names.
+The following requested menus include /digest; keep that entry owner-scoped or
+omit it from the global public menu because /digest remains owner-only.
+
+English:
+
+```text
+start - About the bot
+help - Show available commands
+status - Bot status
+saved - Saved jobs
+filters - Job search filters
+settings - Settings
+digest - Get a job digest now
+cancel - Cancel current input
+```
+
+Español:
+
+```text
+start - Información del bot
+help - Ver comandos disponibles
+status - Estado del bot
+saved - Vacantes guardadas
+filters - Filtros de búsqueda
+settings - Configuración
+digest - Obtener vacantes ahora
+cancel - Cancelar la entrada actual
+```
+
+See [the interface language report](docs/telegram-language-report.md) for both
+languages' UI examples, persistence/restart checks and full validation. The
+[original string inventory](docs/telegram-string-inventory.md) was captured
+before implementation.
+
 ## Persisted job filters
 
 `user_filters` stores one row per user with `UNIQUE(user_id)`, a foreign key to
@@ -515,7 +589,8 @@ configured owner's missing row retains required Python and preferred FastAPI,
 PostgreSQL, Redis, Celery and Docker. This lazy bootstrap runs only for missing
 rows; reset deliberately restores the generic new-user profile. Existing user
 bootstrap/onboarding is unchanged: first /filters or digest creates filters for
-an active persisted user, while public /start does not register new accounts.
+an active persisted user. /start now creates a minimal profile with the selected
+initial language and missing-only notification/trial defaults.
 
 `UserFilterRepository` exposes `get_by_user_id` and `add`, flushing without
 committing. `UserFilterService` owns validation, bootstrap, mapping and
@@ -724,9 +799,10 @@ is introduced. See [the implementation and data audit](docs/statistics-stage-rep
 
 ## MVP boundaries and retention
 
-This is an owner-oriented MVP. Delivery preferences and notification history
-are per user, but the filter profile is shared and `/start` does not implement
-general self-service onboarding. Full multi-user filter persistence is deferred.
+This is an owner-oriented MVP. Interface language, delivery preferences, job
+filters and notification history are persisted per user. `/start` provides
+minimal registration and language selection; collector control, manual digests
+and technical statistics remain owner-only.
 
 Remote OK reads at most 8 MiB of response data, treats naive dates as UTC, and
 reports parsed Retry-After cooldowns without an immediate retry loop. Technology

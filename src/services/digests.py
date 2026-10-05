@@ -4,6 +4,7 @@ from datetime import UTC, date, datetime
 from typing import Callable
 from zoneinfo import ZoneInfo
 
+from src.i18n import DEFAULT_LANGUAGE, Language, t, user_language
 from src.repositories.digests import DigestRepository
 from src.schemas.digest_metrics import DigestMetrics
 from src.schemas.filters import UserFilterDTO
@@ -56,12 +57,14 @@ def select_digest_jobs(
     return selected[:max_jobs]
 
 
-def format_digest_summary(items: list[DigestItem]) -> str:
-    lines = [f"🔥 {len(items)} new job matches", "", "Top matches:"]
+def format_digest_summary(
+    items: list[DigestItem], language: Language = DEFAULT_LANGUAGE
+) -> str:
+    lines = []
     for _, job, score in items[:5]:
         title = " ".join(job.title.split())[:150]
         lines.append(f"• {title} — {score.score}/100")
-    return "\n".join(lines)
+    return t("digest.summary", language, count=len(items), matches="\n".join(lines))
 
 
 class DailyDigestService:
@@ -132,7 +135,7 @@ class DailyDigestService:
                 )
                 return {"status": "empty", "selected": 0, "sent": 0}
             summary_id = await self.client.send_message(
-                user.telegram_id, format_digest_summary(items)
+                user.telegram_id, format_digest_summary(items, user_language(user))
             )
             await self.repository.update(run_id, summary_message_id=summary_id)
             for job_id, job, score in items:

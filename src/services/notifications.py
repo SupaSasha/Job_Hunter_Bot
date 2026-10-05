@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.bot.client import TelegramAPIError, TelegramClient
 from src.bot.formatter import build_job_keyboard, format_job_message
+from src.i18n import user_language
 from src.models.notification import NotificationORM
 from src.models.user import UserORM
 from src.repositories.notifications import NotificationRepository
@@ -48,10 +49,11 @@ class NotificationService:
             return NotificationResult(sent=False, skipped=True, reason="inactive_user")
         # Copy scalars before rollback can expire ORM instances.
         user_id, chat_id = user.id, user.telegram_id
+        language = user_language(user)
         try:
             existing = await self.repository.get_by_user_job(user_id, job_id)
-            message = format_job_message(job, score)
-            keyboard = build_job_keyboard(job_id, job.url)
+            message = format_job_message(job, score, language)
+            keyboard = build_job_keyboard(job_id, job.url, language)
             if existing is not None:
                 result = self._existing_result(existing)
                 if existing.status != "retryable":

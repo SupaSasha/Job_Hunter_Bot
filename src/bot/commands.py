@@ -8,40 +8,31 @@ from src.bot.client import TelegramAPIError, TelegramClient
 from src.bot.dispatch import CommandDispatcher
 from src.bot.filters import FiltersHandler
 from src.bot.formatter import _truncate
-from src.bot.settings import SettingsHandler
+from src.bot.settings import SettingsHandler, build_language_keyboard
 from src.bot.statistics import format_statistics
+from src.i18n import (
+    DEFAULT_LANGUAGE,
+    Language,
+    initial_language,
+    status_label,
+    t,
+    user_language,
+)
 from src.repositories.bot_queries import BotQueryRepository
 from src.repositories.feedback import FeedbackRepository
 from src.repositories.users import UserRepository
 from src.services.collector_policy import COLLECTOR_POLICIES, source_display_name
 from src.services.entitlements import EffectiveNotificationSettings, EntitlementService
 from src.services.statistics import StatisticsService
+from src.services.user_language import UserLanguageService
 
 logger = logging.getLogger(__name__)
 
-WELCOME = (
-    "Job Hunter Bot\n\n"
-    "I search for remote jobs, filter them based on your preferences, calculate "
-    "a match score, and send the best matches in a daily digest.\n\n"
-    "Use /help to see available commands."
-)
-HELP = (
-    "/start - About the bot\n"
-    "/help - Show available commands\n"
-    "/status - Show bot and collector status\n"
-    "/saved - Show saved jobs\n"
-    "/filters - Configure job search filters\n"
-    "/settings - Notification settings\n"
-    "/cancel - Cancel current input"
-)
-ADMIN_HELP = (
-    "\n\nAdmin commands:\n"
-    "/collect - Run all job collectors now\n"
-    "/digest - Send today's digest now\n"
-    "/stats [24h|7d|30d] - Pipeline statistics"
-)
-UNAVAILABLE = "This command is not available."
-UNKNOWN = "Unknown command. Use /help to see available commands."
+WELCOME = t("start.welcome")
+HELP = t("help.public")
+ADMIN_HELP = t("help.admin")
+UNAVAILABLE = t("command.unavailable")
+UNKNOWN = t("command.unknown")
 COMMANDS = {
     "start",
     "help",
@@ -68,21 +59,22 @@ def parse_command(text: object, bot_username: str) -> str | None:
     return name.lower()
 
 
-def saved_job_messages(jobs: list) -> list[str]:
+def saved_job_messages(jobs: list, language: Language = DEFAULT_LANGUAGE) -> list[str]:
     if not jobs:
-        return ["You don't have any saved jobs yet."]
+        return [t("saved.empty", language)]
     messages = []
-    current = "Saved jobs:"
+    current = t("saved.title", language)
     for index, job in enumerate(jobs[:10], start=1):
         entry = _truncate(
             f"{index}. {_truncate(job.title, 240)}\n"
-            f"{_truncate(job.company or 'Company not specified', 160)}\n{job.url}",
+            f"{_truncate(job.company or t('job.company_missing', language), 160)}\n"
+            f"{job.url}",
             3800,
         )
         combined = f"{current}\n\n{entry}"
         if len(combined.encode("utf-16-le")) // 2 > 4096:
             messages.append(current)
-            current = f"Saved jobs (continued):\n\n{entry}"
+            current = t("saved.continued", language) + f"\n\n{entry}"
         else:
             current = combined
     messages.append(current)
@@ -104,8 +96,10 @@ class CommandHandler:
         settings_handler: SettingsHandler | None = None,
         filters_handler: FiltersHandler | None = None,
         statistics: StatisticsService | None = None,
+        languages: UserLanguageService | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ):
+        self.languages = languages
         self.filters_handler = filters_handler
         self.statistics = statistics
         self.settings_handler = settings_handler
@@ -133,7 +127,7 @@ class CommandHandler:
         subscription = await self.queries.subscription(user_id)
         return self.entitlements.effective(preferences, subscription, self.clock())
 
-    async def _status(self, user_id: int) -> str:
+    async def _status(self, user_id: int, language: Language = DEFAULT_LANGUAGE) -> str:
         effective = await self._effective(user_id)
         zone = ZoneInfo(effective.timezone if effective else "UTC")
         states = {
@@ -152,38 +146,55 @@ class CommandHandler:
             collector = states.get(source)
             name = source_display_name(source)
             last_success = timestamp(
-                collector.last_success_at if collector else None, "Never"
+                collector.last_success_at if collector else None,
+                t("status.never", language),
             )
             next_run = timestamp(
-                collector.next_run_at if collector else None, "Not scheduled"
+                collector.next_run_at if collector else None,
+                t("status.not_scheduled", language),
             )
-            status = (collector.last_status if collector else None) or "Unknown"
+            status = (collector.last_status if collector else None) or t(
+                "common.unknown", language
+            )
             collector_sections.append(
-                f"{name}\nLast success: {last_success}\nNext run: {next_run}\n"
-                f"Last status: {status}"
+                t(
+                    "status.collector",
+                    language,
+                    name=name,
+                    last_success=last_success,
+                    next_run=next_run,
+                    status=status_label(status, language),
+                )
             )
         collector_text = "\n\n".join(collector_sections)
-        last_digest = "Never"
+        last_digest = t("status.never", language)
         if run is not None:
             day = (
-                "Today"
+                t("status.today", language)
                 if run.local_date == self.clock().astimezone(zone).date()
                 else str(run.local_date)
             )
-            last_digest = f"{day} ({run.status})"
+            last_digest = f"{day} ({status_label(run.status, language)})"
         digest_time = (
-            effective.digest_time.strftime("%H:%M") if effective else "Unknown"
+            effective.digest_time.strftime("%H:%M")
+            if effective
+            else t("common.unknown", language)
         )
         enabled = (
-            ("Yes" if effective.digest_enabled else "No") if effective else "Unknown"
+            t("common.yes" if effective.digest_enabled else "common.no", language)
+            if effective
+            else t("common.unknown", language)
         )
-        return (
-            f"Bot status: running\n\n{collector_text}\n\n"
-            f"Jobs in database: {count}\n\nDaily digest:\n"
-            f"Time: {digest_time}\n"
-            f"Timezone: {effective.timezone if effective else 'Unknown'}\n"
-            f"Last digest: {last_digest}\nEnabled: {enabled}\n\n"
-            f"Times shown in {zone.key}."
+        return t(
+            "status.body",
+            language,
+            collectors=collector_text,
+            count=count,
+            time=digest_time,
+            timezone=effective.timezone if effective else t("common.unknown", language),
+            last_digest=last_digest,
+            enabled=enabled,
+            zone=zone.key,
         )
 
     async def handle(self, message: dict) -> None:
@@ -208,80 +219,108 @@ class CommandHandler:
         logger.info(
             "Command received: %s", command if command in COMMANDS else "unknown"
         )
+        language = initial_language(sender.get("language_code"))
         if chat.get("type") != "private" or chat_id != sender_id:
-            await self._reply(chat_id, UNAVAILABLE)
+            await self._reply(chat_id, t("command.unavailable", language))
             return
-        if command in {"start", "help"}:
-            help_text = HELP + (
-                ADMIN_HELP if sender_id == self.owner_telegram_id else ""
+        user = await self.users.get_by_telegram_id(sender_id)
+        language = user_language(user, sender.get("language_code"))
+        if command == "start":
+            new_user = user is None
+            if self.languages is not None:
+                # Also recover missing bootstrap rows after interrupted onboarding.
+                user = await self.languages.register(
+                    sender_id, sender.get("language_code")
+                )
+                language = user_language(user, sender.get("language_code"))
+            if new_user:
+                try:
+                    await self.client.send_message(
+                        chat_id,
+                        t("language.choose", language),
+                        build_language_keyboard(language, onboarding=True),
+                    )
+                except TelegramAPIError:
+                    logger.warning("Language picker reply failed")
+            else:
+                await self._reply(chat_id, t("start.welcome", language))
+            return
+        if command == "help":
+            text = t("help.public", language) + (
+                t("help.admin", language) if sender_id == self.owner_telegram_id else ""
             )
-            await self._reply(chat_id, WELCOME if command == "start" else help_text)
+            await self._reply(chat_id, text)
             return
         if command not in COMMANDS:
             logger.info("Unknown command")
-            await self._reply(chat_id, UNKNOWN)
+            await self._reply(chat_id, t("command.unknown", language))
             return
         admin = command in {"collect", "digest", "stats"}
         if admin and (
             self.owner_telegram_id is None or sender_id != self.owner_telegram_id
         ):
             logger.warning("Unauthorized admin command")
-            await self._reply(chat_id, UNAVAILABLE)
+            await self._reply(chat_id, t("command.unavailable", language))
             return
-        user = await self.users.get_by_telegram_id(sender_id)
         if user is None or not user.is_active:
             if admin:
                 logger.warning("Unauthorized admin command")
-            await self._reply(chat_id, UNAVAILABLE)
+            await self._reply(chat_id, t("command.unavailable", language))
             return
         if command == "stats":
-            await self._stats(chat_id, message["text"])
+            await self._stats(chat_id, message["text"], language)
         elif admin:
-            await self._admin(command, user.id, chat_id)
+            await self._admin(command, user.id, chat_id, language)
         elif command == "settings":
             if self.settings_handler is not None:
-                await self.settings_handler.show(user.id, chat_id)
+                await self.settings_handler.show(user.id, chat_id, language)
             else:
-                await self._reply(
-                    chat_id, "Notification settings are not available yet."
-                )
+                await self._reply(chat_id, t("settings.unavailable", language))
         elif command == "status":
-            await self._reply(chat_id, await self._status(user.id))
+            await self._reply(chat_id, await self._status(user.id, language))
         elif command == "saved":
             jobs = await self.feedback.get_saved_jobs_for_user(user.id, limit=10)
-            for text in saved_job_messages(jobs):
+            for text in saved_job_messages(jobs, language):
                 await self._reply(chat_id, text)
         elif command == "filters":
             if self.filters_handler is not None:
-                await self.filters_handler.show(user.id, chat_id)
+                await self.filters_handler.show(user.id, chat_id, language)
             else:
-                await self._reply(chat_id, "Job filters are not available yet.")
+                await self._reply(chat_id, t("filters.unavailable", language))
         elif command == "cancel":
             if self.filters_handler is not None:
-                await self.filters_handler.cancel(chat_id)
+                await self.filters_handler.cancel(chat_id, language)
             else:
-                await self._reply(chat_id, "Input cancelled.")
+                await self._reply(chat_id, t("input.cancelled", language))
 
-    async def _stats(self, chat_id: int, text: str) -> None:
+    async def _stats(
+        self, chat_id: int, text: str, language: Language = DEFAULT_LANGUAGE
+    ) -> None:
         arguments = text.split()[1:]
         if len(arguments) > 1 or (
             arguments and arguments[0] not in {"24h", "7d", "30d"}
         ):
-            await self._reply(chat_id, "Usage: /stats [24h|7d|30d]")
+            await self._reply(chat_id, t("command.stats_usage", language))
             return
         if self.statistics is None:
-            await self._reply(chat_id, "Statistics are unavailable.")
+            await self._reply(chat_id, t("command.stats_unavailable", language))
             return
         try:
             stats = await self.statistics.get_stats(arguments[0] if arguments else "7d")
         except Exception as exc:
             logger.error("Statistics failed: %s", type(exc).__name__)
-            await self._reply(chat_id, "Statistics are temporarily unavailable.")
+            await self._reply(chat_id, t("command.stats_failed", language))
             return
         for message in format_statistics(stats):
             await self._reply(chat_id, message)
 
-    async def _admin(self, command: str, user_id: int, chat_id: int) -> None:
+    async def _admin(
+        self,
+        command: str,
+        user_id: int,
+        chat_id: int,
+        language: Language = DEFAULT_LANGUAGE,
+    ) -> None:
         if command == "digest":
             from src.config import settings
 
@@ -304,9 +343,10 @@ class CommandHandler:
                 )
                 if not stale:
                     response = {
-                        "sent": "Digest already sent today.",
-                        "pending": "Digest is already in progress.",
-                    }.get(run.status, "Digest already attempted today.")
+                        "sent": t("digest.already_sent", language),
+                        "empty": t("digest.empty", language),
+                        "pending": t("digest.in_progress", language),
+                    }.get(run.status, t("digest.attempted", language))
                     await self._reply(chat_id, response)
                     return
         action = "collection" if command == "collect" else "digest"
@@ -318,9 +358,22 @@ class CommandHandler:
                 await self.dispatcher.digest(user_id)
         except Exception as exc:
             logger.error("Failed to dispatch %s (%s)", action, type(exc).__name__)
-            await self._reply(chat_id, f"Failed to start {action}.")
+            await self._reply(
+                chat_id,
+                t(
+                    (
+                        "command.collect_failed"
+                        if command == "collect"
+                        else "digest.failed"
+                    ),
+                    language,
+                ),
+            )
             return
         await self._reply(
             chat_id,
-            ("Collection started." if command == "collect" else "Digest queued."),
+            t(
+                "command.collect_started" if command == "collect" else "digest.queued",
+                language,
+            ),
         )

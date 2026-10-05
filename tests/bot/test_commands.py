@@ -8,7 +8,8 @@ from src.bot.client import TelegramAPIError, TelegramClient
 from src.bot.commands import HELP, WELCOME, CommandHandler, parse_command
 from src.bot.dispatch import CommandDispatcher
 from src.bot.filters import FiltersHandler
-from src.bot.settings import SettingsHandler
+from src.bot.settings import SettingsHandler, build_language_keyboard
+from src.i18n import Language, t
 from src.models.job import JobORM
 from src.models.scheduling import (
     CollectorStateORM,
@@ -83,8 +84,13 @@ def reply(handler):
 async def test_public_commands(handler, command, text):
     handler.users.get_by_telegram_id.return_value = None
     await handler.handle(message(command, sender_id=999))
-    handler.client.send_message.assert_awaited_once_with(999, text)
-    handler.users.get_by_telegram_id.assert_not_awaited()
+    if command == "/start":
+        handler.client.send_message.assert_awaited_once_with(
+            999, t("language.choose"), build_language_keyboard(onboarding=True)
+        )
+    else:
+        handler.client.send_message.assert_awaited_once_with(999, text)
+    handler.users.get_by_telegram_id.assert_awaited_once_with(999)
     handler.users.add.assert_not_awaited()
 
 
@@ -204,7 +210,7 @@ async def test_filters_available_regardless_of_entitlements(
         status=status, trial_ends_at=end, subscription_ends_at=end
     )
     await handler.handle(message("/filters"))
-    handler.filters_handler.show.assert_awaited_once_with(7, 123)
+    handler.filters_handler.show.assert_awaited_once_with(7, 123, Language.EN)
     handler.queries.preferences.assert_not_awaited()
     handler.queries.subscription.assert_not_awaited()
 
@@ -212,13 +218,13 @@ async def test_filters_available_regardless_of_entitlements(
 async def test_filters_do_not_require_notification_preferences(handler):
     handler.queries.preferences.return_value = None
     await handler.handle(message("/filters"))
-    handler.filters_handler.show.assert_awaited_once_with(7, 123)
+    handler.filters_handler.show.assert_awaited_once_with(7, 123, Language.EN)
     handler.queries.preferences.assert_not_awaited()
 
 
 async def test_cancel_delegates_to_filter_handler(handler):
     await handler.handle(message("/cancel"))
-    handler.filters_handler.cancel.assert_awaited_once_with(123)
+    handler.filters_handler.cancel.assert_awaited_once_with(123, Language.EN)
 
 
 @pytest.mark.parametrize(
@@ -250,7 +256,7 @@ async def test_non_owner_cannot_dispatch(handler, command, owner):
     assert reply(handler) == "This command is not available."
     handler.dispatcher.collect.assert_not_awaited()
     handler.dispatcher.digest.assert_not_awaited()
-    handler.users.get_by_telegram_id.assert_not_awaited()
+    handler.users.get_by_telegram_id.assert_awaited_once_with(999)
 
 
 @pytest.mark.parametrize(
@@ -345,7 +351,7 @@ async def test_invalid_or_unaddressed_message_is_ignored(handler, payload):
 async def test_settings_available_to_registered_non_owner(handler):
     handler.settings_handler = AsyncMock(spec=SettingsHandler)
     await handler.handle(message("/settings", sender_id=999))
-    handler.settings_handler.show.assert_awaited_once_with(7, 999)
+    handler.settings_handler.show.assert_awaited_once_with(7, 999, Language.EN)
 
 
 async def test_public_help_hides_admin_commands(handler):
@@ -512,7 +518,7 @@ def test_historical_digests_do_not_appear_as_measured_zeroes():
     [
         ("sent", "Digest already sent today."),
         ("pending", "Digest is already in progress."),
-        ("empty", "Digest already attempted today."),
+        ("empty", "No new jobs match your filters."),
     ],
 )
 async def test_manual_digest_reports_existing_attempt(handler, status, response):

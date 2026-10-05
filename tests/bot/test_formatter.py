@@ -44,7 +44,7 @@ def test_formatter_includes_fields_and_explanations(job: JobDTO) -> None:
         "FastAPI",
         "PostgreSQL",
         "Docker",
-        "Experience: middle",
+        "Experience: Middle",
         "Source: Remote OK",
         "Matches:",
         "✅ Python: +10",
@@ -90,7 +90,7 @@ def test_long_unicode_message_fits_telegram(job: JobDTO) -> None:
 
 def test_keyboard_uses_small_callbacks_and_url() -> None:
     keyboard = build_job_keyboard(42, "https://example.com/42")["inline_keyboard"]
-    assert keyboard[0] == [{"text": "View job", "url": "https://example.com/42"}]
+    assert keyboard[0] == [{"text": "Open vacancy", "url": "https://example.com/42"}]
     assert keyboard[1] == [
         {"text": "Save", "callback_data": "save:42"},
         {"text": "Not suitable", "callback_data": "reject:42"},

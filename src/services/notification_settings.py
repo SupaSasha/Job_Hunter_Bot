@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.i18n import LocalizedValidationError
 from src.repositories.bot_queries import BotQueryRepository
 from src.repositories.notification_settings import NotificationSettingsRepository
 from src.services.entitlements import EffectiveNotificationSettings, EntitlementService
@@ -54,11 +55,11 @@ class NotificationSettingsService:
 
     async def update_timezone(self, user_id: int, timezone: str) -> None:
         if not isinstance(timezone, str):
-            raise ValueError("Invalid timezone")
+            raise LocalizedValidationError("error.timezone")
         try:
             ZoneInfo(timezone)
         except (ZoneInfoNotFoundError, ValueError):
-            raise ValueError("Invalid timezone") from None
+            raise LocalizedValidationError("error.timezone") from None
         await self._update(user_id, "timezone", timezone, premium=False)
 
     async def update_digest_time(self, user_id: int, digest_time: time) -> None:
@@ -68,12 +69,12 @@ class NotificationSettingsService:
             or digest_time.second
             or digest_time.microsecond
         ):
-            raise ValueError("Digest time must be a local time with minute precision")
+            raise LocalizedValidationError("error.digest_time")
         await self._update(user_id, "digest_time", digest_time, premium=True)
 
     async def update_min_score(self, user_id: int, min_score: int) -> None:
         if type(min_score) is not int or not 0 <= min_score <= 100:
-            raise ValueError("Minimum score must be an integer from 0 to 100")
+            raise LocalizedValidationError("error.score")
         await self._update(user_id, "min_score", min_score, premium=True)
 
     async def _update(self, user_id: int, field: str, value, *, premium: bool) -> None:

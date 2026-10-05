@@ -4,6 +4,15 @@ from src.bot.client import TelegramAPIError, TelegramClient
 from src.bot.formatter import _truncate
 from src.bot.pending_input import PendingInput, PendingInputStore
 from src.bot.settings import button
+from src.i18n import (
+    DEFAULT_LANGUAGE,
+    Language,
+    LocalizedValidationError,
+    display_label,
+    t,
+    user_language,
+    validation_message,
+)
 from src.repositories.users import UserRepository
 from src.schemas.filters import UserFilterDTO
 from src.services.collector_policy import source_display_name
@@ -19,124 +28,151 @@ from src.services.user_filters import (
 logger = logging.getLogger(__name__)
 
 LIST_EDITORS = {
-    "keywords": ("keywords", "Keywords"),
-    "reqtech": ("required_technologies", "Required technologies"),
-    "preftech": ("preferred_technologies", "Preferred technologies"),
-    "extech": ("excluded_technologies", "Excluded technologies"),
-    "blacklist_words": ("blacklisted_words", "Blacklisted words"),
-    "blacklist_companies": ("blacklisted_companies", "Blacklisted companies"),
+    "keywords": ("keywords", "label.keywords"),
+    "reqtech": ("required_technologies", "label.required_technologies"),
+    "preftech": ("preferred_technologies", "label.preferred_technologies"),
+    "extech": ("excluded_technologies", "label.excluded_technologies"),
+    "blacklist_words": ("blacklisted_words", "label.blacklisted_words"),
+    "blacklist_companies": ("blacklisted_companies", "label.blacklisted_companies"),
 }
 TOGGLE_EDITORS = {
-    "regions": ("allowed_regions", "Regions", REGIONS),
-    "employment": ("employment_types", "Employment", EMPLOYMENT_TYPES),
-    "experience": ("experience_levels", "Experience", EXPERIENCE_LEVELS),
-    "sources": ("sources", "Sources", ("remoteok", "weworkremotely", "getonboard")),
+    "regions": ("allowed_regions", "label.allowed_regions", REGIONS),
+    "employment": ("employment_types", "label.employment_types", EMPLOYMENT_TYPES),
+    "experience": ("experience_levels", "label.experience_levels", EXPERIENCE_LEVELS),
+    "sources": (
+        "sources",
+        "label.sources",
+        ("remoteok", "weworkremotely", "getonboard"),
+    ),
 }
-ROOT_ITEMS = (
-    ("🔎 Keywords", "keywords"),
-    ("🧰 Required tech", "reqtech"),
-    ("⭐ Preferred tech", "preftech"),
-    ("🚫 Excluded tech", "extech"),
-    ("🌎 Regions", "regions"),
-    ("💼 Employment", "employment"),
-    ("📈 Experience", "experience"),
-    ("💰 Salary", "salary"),
-    ("📡 Sources", "sources"),
-    ("🚫 Blacklist", "blacklist"),
-    ("🕐 Timezone tolerance", "tz_tol"),
-    ("Reset filters", "reset"),
+ROOT_ITEMS = tuple(
+    (f"filters.button_{key}", key)
+    for key in (
+        "keywords",
+        "reqtech",
+        "preftech",
+        "extech",
+        "regions",
+        "employment",
+        "experience",
+        "salary",
+        "sources",
+        "blacklist",
+        "tz_tol",
+        "reset",
+    )
 )
 
 
-def label(value: str) -> str:
-    special = {
-        "worldwide": "Worldwide",
-        "latam": "LATAM",
-        "eu": "EU",
-        "emea": "EMEA",
-        "apac": "APAC",
-        "full_time": "Full-time",
-        "part_time": "Part-time",
-    }
+def label(value: str, language: Language = DEFAULT_LANGUAGE) -> str:
     if value in {"remoteok", "weworkremotely", "getonboard"}:
         return source_display_name(value)
-    return special.get(value, value.replace("_", " ").title())
+    return display_label(value, language)
 
 
 def keyboard(rows: list[list[dict]]) -> dict:
     return {"inline_keyboard": rows}
 
 
-def back(screen: str = "back") -> list[dict]:
-    return [button("← Back", f"filters:{screen}")]
+def back(screen: str = "back", language: Language = DEFAULT_LANGUAGE) -> list[dict]:
+    return [button(t("common.back", language), f"filters:{screen}")]
 
 
-def list_text(values: list[str], empty: str = "Any") -> str:
+def list_text(values: list[str], empty: str) -> str:
     return _truncate("\n".join(values) or empty, 240)
 
 
-def salary_text(filters: UserFilterDTO) -> str:
-    amount = str(filters.min_salary) if filters.min_salary is not None else "Any amount"
-    return f"{filters.currency or 'Any currency'} {amount}"
+def salary_text(filters: UserFilterDTO, language: Language = DEFAULT_LANGUAGE) -> str:
+    amount = (
+        str(filters.min_salary)
+        if filters.min_salary is not None
+        else t("filters.any_amount", language)
+    )
+    return f"{filters.currency or t('filters.any_currency', language)} {amount}"
 
 
-def format_filters(filters: UserFilterDTO) -> str:
-    sections = ["🔎 Job filters"]
+def format_filters(
+    filters: UserFilterDTO, language: Language = DEFAULT_LANGUAGE
+) -> str:
+    sections = [t("filters.title", language)]
     for field, title in LIST_EDITORS.values():
-        sections.append(f"{title}:\n{list_text(getattr(filters, field), 'None')}")
+        values = list_text(getattr(filters, field), t("common.none", language))
+        sections.append(f"{t(title, language)}:\n{values}")
+    for field in (
+        "allowed_regions",
+        "employment_types",
+        "experience_levels",
+        "sources",
+    ):
+        empty = t(
+            "common.none" if field == "allowed_regions" else "common.any", language
+        )
+        values = list_text(
+            [label(value, language) for value in getattr(filters, field)], empty
+        )
+        sections.append(f"{t('label.' + field, language)}:\n{values}")
+    for field in ("remote_only", "exclude_us_only"):
+        value = getattr(filters, field)
+        answer = t("common.yes" if value else "common.no", language)
+        sections.append(
+            f"{t('label.' + field, language)}: {'✅' if value else '❌'} {answer}"
+        )
     sections.extend(
         [
-            "Regions:\n"
-            + list_text([label(value) for value in filters.allowed_regions], "None"),
-            f"Remote only: {'✅ Yes' if filters.remote_only else '❌ No'}",
-            f"Exclude US-only: {'✅ Yes' if filters.exclude_us_only else '❌ No'}",
-            "Employment:\n"
-            + list_text([label(value) for value in filters.employment_types]),
-            "Experience:\n"
-            + list_text([label(value) for value in filters.experience_levels]),
-            f"Minimum salary:\n{salary_text(filters)}",
-            f"Sources:\n{list_text([label(value) for value in filters.sources])}",
-            f"Timezone tolerance: ±{filters.timezone_tolerance_hours}h",
+            t("filters.minimum_salary", language)
+            + ":\n"
+            + salary_text(filters, language),
+            t("filters.tolerance", language, hours=filters.timezone_tolerance_hours),
         ]
     )
     return "\n\n".join(sections)
 
 
-def render_screen(filters: UserFilterDTO, screen: str = "back") -> tuple[str, dict]:
+def render_screen(
+    filters: UserFilterDTO, screen: str = "back", language: Language = DEFAULT_LANGUAGE
+) -> tuple[str, dict]:
     if screen == "back":
-        return format_filters(filters), keyboard(
-            [[button(title, f"filters:{key}")] for title, key in ROOT_ITEMS]
+        return format_filters(filters, language), keyboard(
+            [
+                [button(t(title, language), f"filters:{key}")]
+                for title, key in ROOT_ITEMS
+            ]
         )
     if screen in LIST_EDITORS:
         field, title = LIST_EDITORS[screen]
-        values = _truncate("\n".join(getattr(filters, field)) or "None", 3000)
-        text = f"{title}:\n\n{values}"
-        return text, keyboard(
+        values = _truncate(
+            "\n".join(getattr(filters, field)) or t("common.none", language), 3000
+        )
+        return f"{t(title, language)}:\n\n{values}", keyboard(
             [
                 [
-                    button(action.title(), f"filters:{screen}:{action}")
+                    button(
+                        t("common." + action, language), f"filters:{screen}:{action}"
+                    )
                     for action in ("add", "remove", "clear")
                 ],
-                back("blacklist" if screen.startswith("blacklist_") else "back"),
+                back(
+                    "blacklist" if screen.startswith("blacklist_") else "back", language
+                ),
             ]
         )
     if screen in TOGGLE_EDITORS:
         field, title, values = TOGGLE_EDITORS[screen]
-        chosen = getattr(filters, field)
-        text = f"{title}\n\n" + (
-            "No selections means Any."
-            if field != "sources"
-            else "At least one source must stay enabled."
-        )
-        if screen == "regions":
-            text = (
-                "Regions\n\nSelect allowed regions. With no selections, "
-                "jobs with a known region are excluded."
+        key = (
+            "filters.regions_help"
+            if screen == "regions"
+            else (
+                "filters.source_minimum"
+                if screen == "sources"
+                else "filters.any_selections"
             )
+        )
+        text = f"{t(title, language)}\n\n{t(key, language)}"
+        chosen = getattr(filters, field)
         rows = [
             [
                 button(
-                    f"{'✅' if value in chosen else '❌'} {label(value)}",
+                    f"{'✅' if value in chosen else '❌'} {label(value, language)}",
                     f"filters:{screen}:{value}",
                 )
             ]
@@ -147,70 +183,73 @@ def render_screen(filters: UserFilterDTO, screen: str = "back") -> tuple[str, di
                 [
                     [
                         button(
-                            f"{'✅' if getattr(filters, field) else '❌'} {title}",
+                            f"{'✅' if getattr(filters, field) else '❌'} "
+                            + t("label." + field, language),
                             f"filters:{field}",
                         )
                     ]
-                    for field, title in (
-                        ("remote_only", "Remote only"),
-                        ("exclude_us_only", "Exclude US-only"),
-                    )
+                    for field in ("remote_only", "exclude_us_only")
                 ]
             )
-        return text, keyboard([*rows, back()])
+        return text, keyboard([*rows, back(language=language)])
     if screen == "salary":
-        return (
-            f"Minimum salary\n\nCurrent:\n{salary_text(filters)}\n\n"
-            "No currency conversion is applied.",
-            keyboard(
-                [
-                    [button("Set amount", "filters:min_salary")],
-                    [button("Currency", "filters:currency")],
-                    [button("Clear", "filters:salary:clear")],
-                    back(),
-                ]
-            ),
+        return t(
+            "filters.salary_screen", language, salary=salary_text(filters, language)
+        ), keyboard(
+            [
+                [button(t("filters.set_amount", language), "filters:min_salary")],
+                [button(t("filters.currency", language), "filters:currency")],
+                [button(t("common.clear", language), "filters:salary:clear")],
+                back(language=language),
+            ]
         )
     if screen == "currency":
-        return "Choose a salary currency.", keyboard(
+        return t("filters.choose_currency", language), keyboard(
             [
                 *[
-                    [button(value, f"filters:currency:{value}")]
+                    [
+                        button(
+                            value if value != "Any" else t("common.any", language),
+                            f"filters:currency:{value}",
+                        )
+                    ]
                     for value in (*CURRENCIES, "Any")
                 ],
-                back("salary"),
+                back("salary", language),
             ]
         )
     if screen == "blacklist":
-        return "🚫 Blacklist", keyboard(
+        return t("filters.blacklist_title", language), keyboard(
             [
-                [button("Words", "filters:blacklist_words")],
-                [button("Companies", "filters:blacklist_companies")],
-                back(),
+                [button(t("filters.words", language), "filters:blacklist_words")],
+                [
+                    button(
+                        t("filters.companies", language), "filters:blacklist_companies"
+                    )
+                ],
+                back(language=language),
             ]
         )
     if screen == "tz_tol":
-        return (
-            f"Timezone tolerance: ±{filters.timezone_tolerance_hours}h\n\n"
-            "Timezone is configured in /settings.",
-            keyboard(
-                [
-                    *[
-                        [button(f"±{hours}h", f"filters:tz_tol:{hours}")]
-                        for hours in range(5)
-                    ],
-                    back(),
-                ]
-            ),
-        )
-    if screen == "reset":
-        return "Reset all job filters to defaults?", keyboard(
+        return t(
+            "filters.tolerance", language, hours=filters.timezone_tolerance_hours
+        ) + "\n\n" + t("filters.timezone_hint", language), keyboard(
             [
-                [button("Yes, reset", "filters:reset:confirm")],
-                [button("Cancel", "filters:back")],
+                *[
+                    [button(f"±{hours}h", f"filters:tz_tol:{hours}")]
+                    for hours in range(5)
+                ],
+                back(language=language),
             ]
         )
-    raise ValueError("Invalid filter screen.")
+    if screen == "reset":
+        return t("filters.reset_confirm", language), keyboard(
+            [
+                [button(t("filters.reset_yes", language), "filters:reset:confirm")],
+                [button(t("common.cancel", language), "filters:back")],
+            ]
+        )
+    raise LocalizedValidationError("error.filter_screen")
 
 
 class FiltersHandler:
@@ -228,24 +267,28 @@ class FiltersHandler:
             pending,
         )
 
-    async def show(self, user_id: int, chat_id: int) -> None:
+    async def show(
+        self, user_id: int, chat_id: int, language: Language = DEFAULT_LANGUAGE
+    ) -> None:
         await self.pending.clear(chat_id)
         try:
             try:
-                text, markup = render_screen(await self.service.get_filters(user_id))
+                text, markup = render_screen(
+                    await self.service.get_filters(user_id), language=language
+                )
             except FiltersUnavailable:
                 await self.client.send_message(
-                    chat_id, "Job filters are not available yet."
+                    chat_id, t("filters.unavailable", language)
                 )
             else:
                 await self.client.send_message(chat_id, text, markup)
         except TelegramAPIError:
             logger.warning("Filters reply failed")
 
-    async def cancel(self, chat_id: int) -> None:
+    async def cancel(self, chat_id: int, language: Language = DEFAULT_LANGUAGE) -> None:
         await self.pending.clear(chat_id)
         try:
-            await self.client.send_message(chat_id, "Input cancelled.")
+            await self.client.send_message(chat_id, t("input.cancelled", language))
         except TelegramAPIError:
             logger.warning("Input cancellation reply failed")
 
@@ -264,30 +307,39 @@ class FiltersHandler:
         ):
             return None
         user = await self.users.get_by_telegram_id(sender_id)
-        return (user.id, sender_id) if user is not None and user.is_active else None
-
-    async def _prompt(self, chat_id: int, message_id: int, screen: str, operation: str):
-        state = PendingInput(f"filters:{screen}", message_id, operation)
-        await self.pending.set(chat_id, state)
-        if screen == "min_salary":
-            text = "Send a whole number without currency symbols.\n\nExample:\n2500"
-            target = "salary"
-        else:
-            field, _ = LIST_EDITORS[screen]
-            noun = (
-                "technologies"
-                if field.endswith("technologies")
-                else label(field).lower()
-            )
-            suffix = " to remove" if operation == "remove" else ""
-            text = f"Send {noun}{suffix} separated by commas."
-            if screen == "keywords":
-                text += "\n\nExample:\npython, backend, api"
-            target = screen
         return (
-            text + "\n\nUse /cancel to cancel. Input expires in 10 minutes.",
-            keyboard([back(target)]),
+            (user.id, sender_id, user_language(user))
+            if user is not None and user.is_active
+            else None
         )
+
+    async def _prompt(
+        self,
+        chat_id: int,
+        message_id: int,
+        screen: str,
+        operation: str,
+        language: Language,
+    ):
+        await self.pending.set(
+            chat_id, PendingInput(f"filters:{screen}", message_id, operation)
+        )
+        if screen == "min_salary":
+            text, target = t("input.salary", language), "salary"
+        else:
+            noun = (
+                "tech"
+                if screen in {"reqtech", "preftech", "extech"}
+                else (
+                    "words"
+                    if screen == "blacklist_words"
+                    else "companies" if screen == "blacklist_companies" else "keywords"
+                )
+            )
+            text, target = t(f"input.{operation}_{noun}", language), screen
+            if screen == "keywords":
+                text += t("input.keywords_example", language)
+        return text + t("input.expiry", language), keyboard([back(target, language)])
 
     async def handle(self, callback: dict) -> None:
         if (
@@ -296,7 +348,8 @@ class FiltersHandler:
             or not callback["id"]
         ):
             return
-        answer = "This filter is not available."
+        language = DEFAULT_LANGUAGE
+        answer = t("filters.not_available", language)
         try:
             message = callback.get("message")
             if not isinstance(message, dict):
@@ -315,14 +368,19 @@ class FiltersHandler:
             parts = data.split(":")
             if len(parts) not in {2, 3} or parts[0] != "filters":
                 return
-            user_id, chat_id = identity
+            user_id, chat_id, language = identity
+            answer = t("filters.not_available", language)
             screen, value = parts[1], parts[2] if len(parts) == 3 else None
             await self.pending.clear(chat_id)
             filters = await self.service.get_filters(user_id)
             if screen in LIST_EDITORS and value in {"add", "remove"}:
-                text, markup = await self._prompt(chat_id, message_id, screen, value)
+                text, markup = await self._prompt(
+                    chat_id, message_id, screen, value, language
+                )
             elif screen == "min_salary" and value is None:
-                text, markup = await self._prompt(chat_id, message_id, screen, "add")
+                text, markup = await self._prompt(
+                    chat_id, message_id, screen, "add", language
+                )
             else:
                 updated = False
                 if screen in LIST_EDITORS and value == "clear":
@@ -355,19 +413,19 @@ class FiltersHandler:
                     filters = await self.service.reset(user_id)
                     screen, updated = "back", True
                 elif value is not None:
-                    raise ValueError("Invalid filter option.")
-                text, markup = render_screen(filters, screen)
+                    raise LocalizedValidationError("error.filter_option")
+                text, markup = render_screen(filters, screen, language)
                 if updated:
-                    text = "✅ Job filters updated.\n\n" + text
+                    text = t("filters.updated", language) + "\n\n" + text
             await self.client.edit_message_text(chat_id, message_id, text, markup)
             answer = None
         except FiltersUnavailable:
-            answer = "Job filters are not available yet."
+            answer = t("filters.unavailable", language)
         except ValueError as exc:
-            answer = str(exc)
+            answer = validation_message(exc, language)
         except Exception:
             logger.warning("Filters callback failed")
-            answer = "Could not update the menu. Open /filters to check your filters."
+            answer = t("filters.edit_failed", language)
         finally:
             try:
                 await self.client.answer_callback_query(callback["id"], answer)
@@ -381,7 +439,7 @@ class FiltersHandler:
         identity = await self._user(message)
         if identity is None:
             return
-        user_id, chat_id = identity
+        user_id, chat_id, language = identity
         state = await self.pending.get(chat_id)
         if state is None:
             return
@@ -399,8 +457,10 @@ class FiltersHandler:
                 await self.client.edit_message_text(
                     chat_id,
                     state.message_id,
-                    f"{exc}\n\nTry again, or use /cancel.",
-                    keyboard([back("salary" if screen == "min_salary" else screen)]),
+                    t("input.retry", language, error=validation_message(exc, language)),
+                    keyboard(
+                        [back("salary" if screen == "min_salary" else screen, language)]
+                    ),
                 )
             except TelegramAPIError:
                 logger.warning("Filter validation reply failed")
@@ -409,10 +469,13 @@ class FiltersHandler:
             await self.pending.clear(chat_id)
             return
         await self.pending.clear(chat_id)
-        body, markup = render_screen(filters, screen)
+        body, markup = render_screen(filters, screen, language)
         try:
             await self.client.edit_message_text(
-                chat_id, state.message_id, "✅ Job filters updated.\n\n" + body, markup
+                chat_id,
+                state.message_id,
+                t("filters.updated", language) + "\n\n" + body,
+                markup,
             )
         except TelegramAPIError:
             # The update is committed; a lost edit must not replay Remove/Add.

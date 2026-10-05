@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from src.bot.client import TelegramAPIError, TelegramClient
+from src.i18n import initial_language, t, user_language
 from src.repositories.jobs import JobRepository
 from src.repositories.users import UserRepository
 from src.services.feedback import FeedbackService
@@ -66,28 +67,32 @@ class CallbackHandler:
         action = parse_callback_data(callback.get("data"))
         sender = callback.get("from")
         telegram_id = sender.get("id") if isinstance(sender, dict) else None
+        language = initial_language(
+            sender.get("language_code") if isinstance(sender, dict) else None
+        )
         if (
             action is None
             or type(telegram_id) is not int
             or not 0 < telegram_id <= 2**63 - 1
         ):
             logger.warning("Invalid callback")
-            await self._answer(callback_id, "Invalid callback")
+            await self._answer(callback_id, t("feedback.invalid", language))
             return
 
         user = await self.users.get_by_telegram_id(telegram_id)
+        language = user_language(user, sender.get("language_code"))
         if user is None:
             logger.warning("Unknown user in callback")
-            await self._answer(callback_id, "User is not registered")
+            await self._answer(callback_id, t("feedback.unregistered", language))
             return
         if not user.is_active:
             logger.warning("Inactive user in callback")
-            await self._answer(callback_id, "User is inactive")
+            await self._answer(callback_id, t("feedback.inactive", language))
             return
         job = await self.jobs.get_by_id(action.job_id)
         if job is None:
             logger.warning("Job not found: job_id=%s", action.job_id)
-            await self._answer(callback_id, "Vacancy not found")
+            await self._answer(callback_id, t("feedback.not_found", language))
             return
         user_id = user.id
         await self.feedback.set_feedback(user_id, action.job_id, action.feedback_type)
@@ -97,7 +102,12 @@ class CallbackHandler:
             action.job_id,
             action.feedback_type,
         )
-        text = (
-            "Job saved" if action.feedback_type == "saved" else "Marked as not suitable"
+        text = t(
+            (
+                "feedback.saved"
+                if action.feedback_type == "saved"
+                else "feedback.rejected"
+            ),
+            language,
         )
         await self._answer(callback_id, text)

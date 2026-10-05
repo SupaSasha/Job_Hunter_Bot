@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
+from src.i18n import LocalizedValidationError
 from src.models.user import UserORM
 from src.models.user_filter import DEFAULT_REGIONS, DEFAULT_SOURCES, UserFilterORM
 from src.repositories.notification_settings import NotificationSettingsRepository
@@ -86,7 +87,7 @@ def filters_to_dto(row: UserFilterORM, timezone: str) -> UserFilterDTO:
 
 def normalize_list(field: str, text: str) -> list[str]:
     if field not in TEXT_LISTS or not isinstance(text, str) or len(text) > 4000:
-        raise ValueError("Invalid list input.")
+        raise LocalizedValidationError("error.invalid_list")
     normalize = normalize_technology if field.endswith("technologies") else str.lower
     values = list(
         dict.fromkeys(
@@ -94,9 +95,9 @@ def normalize_list(field: str, text: str) -> list[str]:
         )
     )
     if not values:
-        raise ValueError("Send at least one value separated by commas.")
+        raise LocalizedValidationError("error.empty_list")
     if len(values) > 50 or any(len(value) > 100 for value in values):
-        raise ValueError("Use at most 50 values, each up to 100 characters.")
+        raise LocalizedValidationError("error.list_size")
     return values
 
 
@@ -161,7 +162,7 @@ class UserFilterService:
         self, user_id: int, field: str, action: str, text: str = ""
     ) -> UserFilterDTO:
         if field not in TEXT_LISTS or action not in {"add", "remove", "clear"}:
-            raise ValueError("Invalid list action.")
+            raise LocalizedValidationError("error.list_action")
         values = [] if action == "clear" else normalize_list(field, text)
 
         def change(row):
@@ -176,13 +177,11 @@ class UserFilterService:
                 )
             )
             if len(updated) > 50:
-                raise ValueError("Use at most 50 values.")
+                raise LocalizedValidationError("error.list_limit")
             if field in {"required_technologies", "preferred_technologies"} and set(
                 updated
             ) & set(row.excluded_technologies):
-                raise ValueError(
-                    "Remove these technologies from excluded technologies first."
-                )
+                raise LocalizedValidationError("error.tech_conflict")
             setattr(row, field, updated)
             if field == "excluded_technologies":
                 for target in ("required_technologies", "preferred_technologies"):
@@ -202,7 +201,7 @@ class UserFilterService:
                 user_id, lambda row: setattr(row, field, not getattr(row, field))
             )
         if field not in TOGGLE_LISTS or value not in TOGGLE_LISTS[field]:
-            raise ValueError("Invalid filter option.")
+            raise LocalizedValidationError("error.filter_option")
 
         def change(row):
             current = getattr(row, field)
@@ -212,7 +211,7 @@ class UserFilterService:
                 else [*current, value]
             )
             if field == "sources" and not updated:
-                raise ValueError("At least one source must be enabled.")
+                raise LocalizedValidationError("filters.source_minimum")
             setattr(
                 row, field, [item for item in TOGGLE_LISTS[field] if item in updated]
             )
@@ -227,9 +226,7 @@ class UserFilterService:
             or not re.fullmatch(r"[0-9]{1,10}", amount.strip())
             or int(amount) > 2**31 - 1
         ):
-            raise ValueError(
-                "Send a whole number from 0 to 2147483647, without currency symbols."
-            )
+            raise LocalizedValidationError("error.salary")
         return await self._run(
             user_id,
             lambda row: setattr(
@@ -241,14 +238,14 @@ class UserFilterService:
         self, user_id: int, currency: str | None
     ) -> UserFilterDTO:
         if currency is not None and currency not in CURRENCIES:
-            raise ValueError("Invalid currency.")
+            raise LocalizedValidationError("error.currency")
         return await self._run(user_id, lambda row: setattr(row, "currency", currency))
 
     async def update_timezone_tolerance(
         self, user_id: int, hours: int
     ) -> UserFilterDTO:
         if type(hours) is not int or not 0 <= hours <= 4:
-            raise ValueError("Timezone tolerance must be between 0 and 4 hours.")
+            raise LocalizedValidationError("error.tolerance")
         return await self._run(
             user_id, lambda row: setattr(row, "timezone_tolerance_hours", hours)
         )

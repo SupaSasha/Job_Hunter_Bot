@@ -1,5 +1,7 @@
 from urllib.parse import urlsplit
 
+from src.i18n import DEFAULT_LANGUAGE, Language, display_label, t
+from src.i18n.scoring import format_score_rule
 from src.schemas.job import JobDTO
 from src.schemas.scoring import ScoreResult
 from src.services.collector_policy import source_display_name
@@ -12,15 +14,6 @@ _TECHNOLOGIES = {
     "redis": "Redis",
     "celery": "Celery",
 }
-_REGIONS = {
-    "worldwide": "Worldwide",
-    "latam": "LATAM",
-    "south_america": "South America",
-    "us_only": "US only",
-    "uruguay": "Uruguay",
-}
-_EMPLOYMENT = {"full_time": "Full-time", "part_time": "Part-time"}
-_PERIODS = {"month": "month", "year": "year", "hour": "hour"}
 
 
 def _truncate(value: str, limit: int) -> str:
@@ -31,57 +24,74 @@ def _truncate(value: str, limit: int) -> str:
     return encoded[: (limit - 1) * 2].decode("utf-16-le", errors="ignore") + "…"
 
 
-def _salary(job: JobDTO) -> str:
+def _salary(job: JobDTO, language: Language = DEFAULT_LANGUAGE) -> str:
     if job.salary_min is None and job.salary_max is None:
-        return "Salary not specified"
+        return t("job.salary_missing", language)
     if job.salary_min is not None and job.salary_max is not None:
         amount = f"{job.salary_min:,}–{job.salary_max:,}"
     elif job.salary_min is not None:
-        amount = f"From {job.salary_min:,}"
+        amount = t("job.salary_from", language, amount=f"{job.salary_min:,}")
     else:
-        amount = f"Up to {job.salary_max:,}"
+        amount = t("job.salary_up_to", language, amount=f"{job.salary_max:,}")
     currency = f" {job.currency}" if job.currency else ""
     period = (
-        f" / {_PERIODS.get(job.salary_period, job.salary_period)}"
-        if job.salary_period
-        else ""
+        f" / {display_label(job.salary_period, language)}" if job.salary_period else ""
     )
     return amount + currency + period
 
 
-def format_job_message(job: JobDTO, score: ScoreResult) -> str:
-    regions = ", ".join(_REGIONS.get(r, r) for r in job.remote_regions)
-    location = regions or job.location or "Region not specified"
+def format_job_message(
+    job: JobDTO, score: ScoreResult, language: Language = DEFAULT_LANGUAGE
+) -> str:
+    regions = ", ".join(
+        display_label(region, language) for region in job.remote_regions
+    )
+    location = regions or job.location or t("job.region_missing", language)
     if job.remote:
-        location = f"Remote · {location}"
-    employment = _EMPLOYMENT.get(
-        job.employment_type, job.employment_type or "Employment type not specified"
+        location = f"{t('job.remote', language)} · {location}"
+    employment = (
+        display_label(job.employment_type, language)
+        if job.employment_type
+        else t("job.employment_missing", language)
     )
-    technologies = (
-        "\n".join(_TECHNOLOGIES.get(t, t) for t in job.technologies)
-        or "Technologies not specified"
+    technologies = "\n".join(
+        _TECHNOLOGIES.get(value, value) for value in job.technologies
+    ) or t("job.technologies_missing", language)
+    experience = (
+        display_label(job.experience_level, language)
+        if job.experience_level
+        else t("common.not_specified", language)
     )
+    company = _truncate(job.company or t("job.company_missing", language), 160)
     sections = [
-        f"🔥 Match: {score.score}%",
-        f"{_truncate(job.title, 240)}\n"
-        f"{_truncate(job.company or 'Company not specified', 160)}",
-        f"💰 {_salary(job)}\n🌎 {_truncate(location, 300)}\n🕐 {employment}",
-        _truncate(technologies, 600),
-        f"Experience: {job.experience_level or 'not specified'}\n"
-        f"Source: {source_display_name(job.source)}",
+        t("job.match", language, score=score.score),
+        _truncate(job.title, 240),
+        f"{t('job.company', language)}: {company}",
+        f"💰 {t('job.salary', language)}: {_salary(job, language)}\n"
+        f"🌎 {t('job.region', language)}: {_truncate(location, 300)}\n"
+        f"🕐 {t('job.employment', language)}: {employment}",
+        f"{t('job.technologies', language)}:\n{_truncate(technologies, 600)}",
+        f"{t('job.experience', language)}: {experience}\n"
+        f"{t('job.source', language)}: {source_display_name(job.source)}",
     ]
-    for title, items, icon in (
-        ("Matches", score.matched_rules, "✅"),
-        ("Penalties", score.penalties, "⚠️"),
-        ("Warnings", score.warnings, "⚠️"),
+    for key, items, icon in (
+        ("job.matches", score.matched_rules, "✅"),
+        ("job.penalties", score.penalties, "⚠️"),
+        ("job.warnings", score.warnings, "⚠️"),
     ):
-        entries = [item for item in items if item.strip()]
+        entries = [format_score_rule(item, language) for item in items if item.strip()]
         if entries:
-            sections.append(title + ":\n" + "\n".join(f"{icon} {v}" for v in entries))
+            sections.append(
+                t(key, language)
+                + ":\n"
+                + "\n".join(f"{icon} {value}" for value in entries)
+            )
     return _truncate("\n\n".join(sections), 4096)
 
 
-def build_job_keyboard(job_id: int, url: str) -> dict:
+def build_job_keyboard(
+    job_id: int, url: str, language: Language = DEFAULT_LANGUAGE
+) -> dict:
     parsed = urlsplit(url)
     if parsed.scheme not in {"https", "http"} or not parsed.netloc:
         raise ValueError("Job URL must be an absolute HTTP(S) URL")
@@ -90,10 +100,10 @@ def build_job_keyboard(job_id: int, url: str) -> dict:
         raise ValueError("Job ID does not fit Telegram callback_data")
     return {
         "inline_keyboard": [
-            [{"text": "View job", "url": url}],
+            [{"text": t("job.open", language), "url": url}],
             [
-                {"text": "Save", "callback_data": callbacks[0]},
-                {"text": "Not suitable", "callback_data": callbacks[1]},
+                {"text": t("job.save", language), "callback_data": callbacks[0]},
+                {"text": t("job.reject", language), "callback_data": callbacks[1]},
             ],
         ]
     }

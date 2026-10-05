@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 
 from src.bot.client import TelegramClient
@@ -51,7 +51,21 @@ async def test_migration_preserves_existing_rows_and_matches_metadata(pg):
 
         await connection.run_sync(downgrade)
         await session.commit()
-    a, _ = await seed(pg)
+    # Use SQL for the old schema: the current ORM also includes users.language.
+    async with pg() as session:
+        a = await session.scalar(
+            text("INSERT INTO users (telegram_id) VALUES (1001) RETURNING id")
+        )
+        await session.execute(text("INSERT INTO users (telegram_id) VALUES (1002)"))
+        await session.execute(
+            text(
+                "INSERT INTO user_notification_settings "
+                "(user_id, timezone, digest_time, min_score, max_jobs_per_digest) "
+                "VALUES (:id, 'UTC', '09:00', 0, 10)"
+            ),
+            {"id": a},
+        )
+        await session.commit()
     async with pg() as session:
         connection = await session.connection()
 
