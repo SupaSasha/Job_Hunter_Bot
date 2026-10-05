@@ -174,6 +174,18 @@ def test_scoring_warns_for_unknown_salary_and_clamps_score_bounds() -> None:
     [
         ("We've been growing for 12 years. Requires 2 years of experience.", 2),
         ("5+ years of professional experience", 5),
+        ("Requires 5 years of <strong>professional experience</strong>.", 5),
+        ("<p>Requires <b>5+</b> years of experience.</p>", 5),
+        ("Requires 5 years' experience.", 5),
+        ("Requires 5 years’ experience.", 5),
+        ("Requires 5 years of hands-on experience.", 5),
+        ("Requires 5 years of hands‑on experience.", 5),
+        ("Requires 5&nbsp;years&#39; professional experience.", 5),
+        ("<p>Company founded 12 years ago.</p><p>2 years’ experience.</p>", 2),
+        ("<script>12 years of experience</script><p>2 years experience</p>", 2),
+        ("5 years of hands-on experience; 2 years Python experience", 5),
+        ("Company has existed for 12 years", None),
+        ("<p>Company founded 12 years ago.</p><p>Experience is valued.</p>", None),
         ("At least 4 years experience with Python", 4),
         ("minimum 3 years experience", 3),
         ("3+ years experience with Python", 3),
@@ -185,3 +197,27 @@ def test_scoring_warns_for_unknown_salary_and_clamps_score_bounds() -> None:
 )
 def test_years_require_explicit_experience_context(description, expected):
     assert ScoringService._infer_years_of_experience(description) == expected
+
+
+def test_remoteok_html_experience_scores_like_plain_text():
+    from src.collectors.remoteok import RemoteOKCollector
+    from src.services.normalization import NormalizationService
+
+    raw = {
+        "id": "review",
+        "position": "Python Developer",
+        "url": "https://example.com/job",
+        "tags": ["python"],
+        "description": "Requires 5 years of <strong>professional experience</strong>.",
+    }
+    job = NormalizationService().normalize(RemoteOKCollector.map_job(raw))
+    plain = job.model_copy(
+        update={"description": "Requires 5 years of professional experience."}
+    )
+    service = ScoringService()
+    filters = UserFilterDTO()
+    assert service.calculate(job, filters) == service.calculate(plain, filters)
+    assert (
+        "Requires 5+ years of experience: -10"
+        in service.calculate(job, filters).penalties
+    )

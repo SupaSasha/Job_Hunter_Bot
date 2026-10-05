@@ -503,7 +503,22 @@ registered automatically. Repeated presses update one unique user/job row.
 Feedback does not modify notification status or scoring weights.
 
 Polling loads `telegram:polling:offset` from Redis at startup and saves the next
-offset only after handling an update. Three consecutive handler failures skip
+offset with its handling timestamp in one atomic JSON write after processing.
+Checkpoints expire after five days without a handled update, both after restart
+and in a running poller. Expiry is checked before getUpdates so a stale high
+offset cannot acknowledge newly randomized, lower update IDs after a week of
+inactivity. Five days allows for Telegram's 24-hour update retention plus a
+margin before that reset. Empty polls and Redis write retries do not refresh
+the handling timestamp. Expired checkpoints request unconfirmed updates without
+an offset; live checkpoints still prevent replay of confirmed commands.
+
+Legacy integer checkpoints are migrated once without changing their confirmed
+offset. Their original age is unknown, so the expiry clock starts on migration;
+a legacy checkpoint that was already stale cannot be detected retrospectively.
+The migration logs this limitation. Do not run the previous polling version
+against the new JSON checkpoint format.
+
+Three consecutive handler failures skip
 a logged poison update, allowing later updates to proceed. Redis load/save
 failures pause polling and retry; a save failure does not rerun the handled
 command in the same process. Confirmed `/collect`, `/digest` and callback
@@ -633,7 +648,10 @@ general self-service onboarding. Full multi-user filter persistence is deferred.
 Remote OK reads at most 8 MiB of response data, treats naive dates as UTC, and
 reports parsed Retry-After cooldowns without an immediate retry loop. Technology
 aliases are shared across normalization/filtering/scoring; C, C++ and C# remain
-distinct. User timezone offsets include fractional hours and current-date DST.
+distinct. Experience scoring strips HTML and decodes entities before matching
+explicit experience requirements, including possessive years' / years’ and
+hands-on wording. Company/product age still does not count as work experience.
+User timezone offsets include fractional hours and current-date DST.
 
 No data is deleted automatically. See the hardening report for proposed jobs
 and collector-run retention, and criteria for introducing per-user evaluation

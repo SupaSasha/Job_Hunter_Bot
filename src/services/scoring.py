@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+from src.collectors.text import html_to_text
 from src.schemas.filters import UserFilterDTO
 from src.schemas.job import JobDTO
 from src.schemas.scoring import ScoreResult
@@ -92,13 +93,14 @@ class ScoringService:
 
     @staticmethod
     def _infer_years_of_experience(description: str | None) -> int | None:
+        description = html_to_text(description)
         if not description:
             return None
 
         # Require explicit experience context; do not match company/product age.
         pattern = (
-            r"(?<![\w.])(?P<years>\d+)\+?\s*(?:years?|yrs?)\s+"
-            r"(?:of\s+)?(?:[a-z+#]+\s+){0,3}experience\b"
+            r"(?<![\w.])(?P<years>\d+)\+?\s*(?:years?|yrs?)[’']?\s+"
+            r"(?:of\s+)?(?:[a-z+#]+(?:[-‑–][a-z+#]+)*\s+){0,3}experience\b"
         )
         found = [
             int(match.group("years"))
