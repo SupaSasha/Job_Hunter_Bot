@@ -1,0 +1,95 @@
+name: job-hunter-bot
+
+x-application: &application
+  image: job-hunter-bot:production
+  build:
+    context: .
+    dockerfile: Dockerfile
+  env_file: .env
+  environment:
+    MODE: PROD
+    DB_HOST: postgres
+    DB_PORT: "5432"
+    REDIS_HOST: redis
+    REDIS_PORT: "6379"
+    TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?Configure TELEGRAM_BOT_TOKEN in .env}
+    TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:?Configure TELEGRAM_CHAT_ID in .env}
+  restart: unless-stopped
+  init: true
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  logging: &logging
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${DB_NAME:?Configure DB_NAME in .env}
+      POSTGRES_USER: ${DB_USER:?Configure DB_USER in .env}
+      POSTGRES_PASSWORD: ${DB_PASS:?Configure DB_PASS in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    logging: *logging
+
+  redis:
+    image: redis:7
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging: *logging
+
+  api:
+    <<: *application
+    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  celery_worker:
+    <<: *application
+    command: ["celery", "-A", "src.tasks.celery_app:celery_app", "worker", "-l", "INFO", "--concurrency=2", "--hostname=worker@%h"]
+    stop_grace_period: 11m
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A src.tasks.celery_app:celery_app inspect ping --destination=worker@$$(hostname) --timeout=5"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
+
+  celery_beat:
+    <<: *application
+    command: ["celery", "-A", "src.tasks.celery_app:celery_app", "beat", "-l", "INFO", "--schedule=/app/run/celerybeat-schedule", "--pidfile=/app/run/celerybeat.pid"]
+    volumes:
+      - celery_beat_data:/app/run
+
+  telegram_polling:
+    <<: *application
+    command: ["python", "-m", "src.scripts.telegram_polling"]
+
+volumes:
+  postgres_data:
+  redis_data:
+  celery_beat_data:

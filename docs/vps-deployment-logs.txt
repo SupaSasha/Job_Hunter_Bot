@@ -1,0 +1,97 @@
+telegram_polling-1  | INFO:httpx:HTTP Request: POST https://api.telegram.org/bot<redacted>/getMe "HTTP/1.1 200 OK"
+telegram_polling-1  | INFO:__main__:Telegram command and callback polling started
+telegram_polling-1  | INFO:httpx:HTTP Request: POST https://api.telegram.org/bot<redacted>/getUpdates "HTTP/1.1 200 OK"
+telegram_polling-1  | INFO:httpx:HTTP Request: POST https://api.telegram.org/bot<redacted>/getUpdates "HTTP/1.1 200 OK"
+telegram_polling-1  | INFO:httpx:HTTP Request: POST https://api.telegram.org/bot<redacted>/getUpdates "HTTP/1.1 200 OK"
+telegram_polling-1  | INFO:httpx:HTTP Request: POST https://api.telegram.org/bot<redacted>/getMe "HTTP/1.1 200 OK"
+telegram_polling-1  | INFO:__main__:Telegram command and callback polling started
+telegram_polling-1  | INFO:httpx:HTTP Request: POST https://api.telegram.org/bot<redacted>/getUpdates "HTTP/1.1 200 OK"
+telegram_polling-1  | INFO:httpx:HTTP Request: POST https://api.telegram.org/bot<redacted>/getUpdates "HTTP/1.1 200 OK"
+telegram_polling-1  | INFO:httpx:HTTP Request: POST https://api.telegram.org/bot<redacted>/getUpdates "HTTP/1.1 200 OK"
+telegram_polling-1  | INFO:httpx:HTTP Request: POST https://api.telegram.org/bot<redacted>/getUpdates "HTTP/1.1 200 OK"
+telegram_polling-1  | INFO:httpx:HTTP Request: POST https://api.telegram.org/bot<redacted>/getUpdates "HTTP/1.1 200 OK"
+telegram_polling-1  | INFO:httpx:HTTP Request: POST https://api.telegram.org/bot<redacted>/getUpdates "HTTP/1.1 200 OK"
+telegram_polling-1  | INFO:httpx:HTTP Request: POST https://api.telegram.org/bot<redacted>/getUpdates "HTTP/1.1 200 OK"
+celery_worker-1     |
+celery_worker-1     |  -------------- worker@57e58e5c8974 v5.6.3 (recovery)
+celery_worker-1     | --- ***** -----
+celery_worker-1     | -- ******* ---- Linux-7.0.0-34-generic-x86_64-with-glibc2.36 2026-10-05 17:57:50
+celery_worker-1     | - *** --- * ---
+celery_worker-1     | - ** ---------- [config]
+celery_worker-1     | - ** ---------- .> app:         <redacted>:0x7d098e6754f0
+celery_worker-1     | - ** ---------- .> transport:   redis://redis:6379/0
+celery_worker-1     | - ** ---------- .> results:     redis://redis:6379/0
+celery_worker-1     | - *** --- * --- .> concurrency: 2 (prefork)
+celery_worker-1     | -- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+celery_worker-1     | --- ***** -----
+celery_worker-1     |  -------------- [queues]
+celery_worker-1     |                 .> celery           exchange=celery(direct) key=celery
+celery_worker-1     |
+celery_worker-1     |
+celery_worker-1     | [tasks]
+celery_worker-1     |   . jobs.collect_getonboard
+celery_worker-1     |   . jobs.collect_remoteok
+celery_worker-1     |   . jobs.collect_weworkremotely
+celery_worker-1     |   . notifications.send_daily_digest
+celery_worker-1     |   . scheduler.dispatch_collectors
+celery_worker-1     |   . scheduler.dispatch_digests
+celery_worker-1     |
+celery_worker-1     | [2026-10-05 17:57:50,541: INFO/MainProcess] Connected to redis://redis:6379/0
+celery_worker-1     | [2026-10-05 17:57:50,544: INFO/MainProcess] mingle: searching for neighbors
+celery_worker-1     | [2026-10-05 17:57:51,554: INFO/MainProcess] mingle: all alone
+celery_worker-1     | [2026-10-05 17:57:51,573: INFO/MainProcess] worker@57e58e5c8974 ready.
+celery_worker-1     |
+celery_worker-1     | worker: Warm shutdown (MainProcess)
+celery_worker-1     |
+celery_worker-1     |  -------------- worker@57e58e5c8974 v5.6.3 (recovery)
+celery_worker-1     | --- ***** -----
+celery_worker-1     | -- ******* ---- Linux-7.0.0-34-generic-x86_64-with-glibc2.36 2026-10-05 17:59:57
+celery_worker-1     | - *** --- * ---
+celery_worker-1     | - ** ---------- [config]
+celery_worker-1     | - ** ---------- .> app:         <redacted>:0x766babe81eb0
+celery_worker-1     | - ** ---------- .> transport:   redis://redis:6379/0
+celery_worker-1     | - ** ---------- .> results:     redis://redis:6379/0
+celery_worker-1     | - *** --- * --- .> concurrency: 2 (prefork)
+celery_worker-1     | -- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+celery_worker-1     | --- ***** -----
+celery_worker-1     |  -------------- [queues]
+celery_worker-1     |                 .> celery           exchange=celery(direct) key=celery
+celery_worker-1     |
+celery_worker-1     |
+celery_worker-1     | [tasks]
+celery_worker-1     |   . jobs.collect_getonboard
+celery_worker-1     |   . jobs.collect_remoteok
+celery_worker-1     |   . jobs.collect_weworkremotely
+celery_worker-1     |   . notifications.send_daily_digest
+celery_worker-1     |   . scheduler.dispatch_collectors
+celery_worker-1     |   . scheduler.dispatch_digests
+celery_worker-1     |
+celery_worker-1     | [2026-10-05 17:59:57,573: INFO/MainProcess] Connected to redis://redis:6379/0
+celery_worker-1     | [2026-10-05 17:59:57,588: INFO/MainProcess] mingle: searching for neighbors
+celery_worker-1     | [2026-10-05 17:59:58,601: INFO/MainProcess] mingle: all alone
+celery_worker-1     | [2026-10-05 17:59:58,613: INFO/MainProcess] worker@57e58e5c8974 ready.
+celery_worker-1     | [2026-10-05 18:00:43,859: INFO/MainProcess] Task scheduler.dispatch_digests[4c369a65-76ca-49d3-b02e-3fba06249f26] received
+celery_worker-1     | [2026-10-05 18:00:44,007: INFO/ForkPoolWorker-1] Task scheduler.dispatch_digests[4c369a65-76ca-49d3-b02e-3fba06249f26] succeeded in 0.14628055899999737s: 0
+celery_beat-1       | celery beat v5.6.3 (recovery) is starting.
+celery_beat-1       | __    -    ... __   -        _
+celery_beat-1       | LocalTime -> 2026-10-05 17:57:49
+celery_beat-1       | Configuration ->
+celery_beat-1       |     . broker -> redis://redis:6379/0
+celery_beat-1       |     . loader -> celery.loaders.app.AppLoader
+celery_beat-1       |     . scheduler -> celery.beat.PersistentScheduler
+celery_beat-1       |     . db -> /app/run/celerybeat-schedule
+celery_beat-1       |     . logfile -> [stderr]@%INFO
+celery_beat-1       |     . maxinterval -> 5.00 minutes (300s)
+celery_beat-1       | [2026-10-05 17:57:49,878: INFO/MainProcess] beat: Starting...
+celery_beat-1       | celery beat v5.6.3 (recovery) is starting.
+celery_beat-1       | __    -    ... __   -        _
+celery_beat-1       | LocalTime -> 2026-10-05 17:59:57
+celery_beat-1       | Configuration ->
+celery_beat-1       |     . broker -> redis://redis:6379/0
+celery_beat-1       |     . loader -> celery.loaders.app.AppLoader
+celery_beat-1       |     . scheduler -> celery.beat.PersistentScheduler
+celery_beat-1       |     . db -> /app/run/celerybeat-schedule
+celery_beat-1       |     . logfile -> [stderr]@%INFO
+celery_beat-1       |     . maxinterval -> 5.00 minutes (300s)
+celery_beat-1       | [2026-10-05 17:59:57,355: INFO/MainProcess] beat: Starting...
+celery_beat-1       | [2026-10-05 18:00:43,847: INFO/MainProcess] Scheduler: Sending due task dispatch-digests (scheduler.dispatch_digests)

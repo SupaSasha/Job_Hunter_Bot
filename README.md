@@ -657,3 +657,60 @@ No data is deleted automatically. See the hardening report for proposed jobs
 and collector-run retention, and criteria for introducing per-user evaluation
 caching. Linux deployments and Ubuntu CI use system timezone data; add `tzdata`
 when adopting Windows or a slim runtime image without that system database.
+
+## VPS deployment
+
+The development compose file remains unchanged. Production uses
+`docker-compose.production.yml` and a Python 3.12 slim application image shared
+by FastAPI, the Celery worker, Beat and Telegram polling. Application processes
+run as UID 10001; dependencies are installed from the lockfile without the dev
+group. The image never includes `.env`. System timezone data is installed.
+
+The deployment directory is `/opt/job_hunter_bot`. Initialize `.env` securely
+once and set its permissions to 600; never replace an existing server file during
+an update. Configure database credentials, the Telegram token and owner chat ID.
+Production Compose supplies `MODE=PROD`, `DB_HOST=postgres`, `DB_PORT=5432`,
+`REDIS_HOST=redis`, and `REDIS_PORT=6379`, overriding local host/port values.
+Scheduler and digest settings use the existing defaults unless set in `.env`.
+
+All six services use `restart: unless-stopped`, and Docker must be enabled at
+boot. PostgreSQL 16, Redis 7 AOF and Beat's schedule use separate named volumes.
+PostgreSQL/Redis have healthchecks; application services wait for both. The API
+has an HTTP healthcheck and the worker uses an addressed Celery ping. The API
+is internal only, and this Compose file publishes no host ports. SSH is the
+only public endpoint needed for this deployment. Docker log rotation is capped
+at three 10 MiB files per service.
+
+First deployment, after transferring source files without `.env` or development
+caches and initializing the environment separately:
+
+```bash
+cd /opt/job_hunter_bot
+docker compose -f docker-compose.production.yml config --quiet
+docker compose -f docker-compose.production.yml build api
+docker compose -f docker-compose.production.yml up -d --wait postgres redis
+docker compose -f docker-compose.production.yml run --rm --no-deps api poetry run alembic upgrade head
+docker compose -f docker-compose.production.yml run --rm --no-deps api poetry run alembic current
+docker compose -f docker-compose.production.yml up -d --wait --wait-timeout 180
+docker compose -f docker-compose.production.yml ps
+```
+
+Future updates from the local checkout:
+
+```bash
+./scripts/deploy.sh
+# Optional overrides:
+DEPLOY_TARGET=root@179.236.245.161 DEPLOY_PATH=/opt/job_hunter_bot ./scripts/deploy.sh
+```
+
+The script checks that server `.env` exists, transfers source via SSH/rsync,
+builds the image, keeps PostgreSQL/Redis up, stops application writers before
+applying existing migrations, and starts the services. It never copies `.env`,
+uses rsync without deletion, and never removes volumes or downgrades the database.
+If a migration fails, application services remain stopped for inspection; their
+data remains intact. Removed source files are not automatically deleted on the
+server and require a deliberate cleanup if a later version removes modules.
+
+Run only one Beat instance and one poller for the token. Stop local bot processes
+before activating the VPS. Do not use `docker compose down -v`. Back up PostgreSQL
+and the server `.env` securely before future schema/deployment changes.
