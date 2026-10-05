@@ -70,7 +70,13 @@ Before deploying this correction, the database was backed up to
 `/opt/job_hunter_bot/backups/pre-manual-digest-85d0942/database.dump` on the VPS.
 The existing deployment script preserves `.env`, database/Redis volumes and
 history, applies Alembic before starting updated writers, then waits for
-services. Production `.env` is checked against its pre-deployment checksum.
+services. Production `.env` is excluded from the transfer; its modification
+timestamp was verified after deployment. The pre-migration dump was validated
+with `pg_restore --list`.
+
+Correction commit `601d0e4` was pushed and deployed. All six production
+services are running. Database verification confirms revision `f72c4ea83910`
+and both reservation indexes.
 
 Live Telegram delivery is triggered by the owner's `/digest` command. The
 deployment checks do not send unsolicited job messages.
