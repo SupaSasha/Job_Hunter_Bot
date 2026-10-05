@@ -88,6 +88,12 @@ def setup(monkeypatch):
     async def sessions():
         yield None
 
+    filters = AsyncMock()
+    filters.get_filters.return_value = default_user_filters()
+    monkeypatch.setattr(
+        "src.services.digests.UserFilterService", lambda session: filters
+    )
+
     client = AsyncMock()
     client.send_message.return_value = 99
     service = DailyDigestService(

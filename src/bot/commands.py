@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 from src.bot.client import TelegramAPIError, TelegramClient
 from src.bot.dispatch import CommandDispatcher
+from src.bot.filters import FiltersHandler
 from src.bot.formatter import _truncate
 from src.bot.settings import SettingsHandler
 from src.bot.statistics import format_statistics
@@ -13,7 +14,6 @@ from src.repositories.bot_queries import BotQueryRepository
 from src.repositories.feedback import FeedbackRepository
 from src.repositories.users import UserRepository
 from src.services.collector_policy import COLLECTOR_POLICIES, source_display_name
-from src.services.default_filters import default_user_filters
 from src.services.entitlements import EffectiveNotificationSettings, EntitlementService
 from src.services.statistics import StatisticsService
 
@@ -30,8 +30,9 @@ HELP = (
     "/help - Show available commands\n"
     "/status - Show bot and collector status\n"
     "/saved - Show saved jobs\n"
-    "/filters - Show current filters\n"
-    "/settings - Notification settings"
+    "/filters - Configure job search filters\n"
+    "/settings - Notification settings\n"
+    "/cancel - Cancel current input"
 )
 ADMIN_HELP = (
     "\n\nAdmin commands:\n"
@@ -48,6 +49,7 @@ COMMANDS = {
     "saved",
     "filters",
     "settings",
+    "cancel",
     "collect",
     "digest",
     "stats",
@@ -64,38 +66,6 @@ def parse_command(text: object, bot_username: str) -> str | None:
     if not re.fullmatch(r"[A-Za-z0-9_]{1,32}", name):
         return ""
     return name.lower()
-
-
-def format_filters(effective: EffectiveNotificationSettings) -> str:
-    filters = default_user_filters(effective.timezone)
-    labels = {
-        "python": "Python",
-        "fastapi": "FastAPI",
-        "postgresql": "PostgreSQL",
-        "redis": "Redis",
-        "celery": "Celery",
-        "docker": "Docker",
-    }
-    required = "\n".join(labels.get(t, t) for t in filters.required_technologies)
-    preferred = "\n".join(labels.get(t, t) for t in filters.preferred_technologies)
-
-    def yes_no(value: bool) -> str:
-        return "Yes" if value else "No"
-
-    return (
-        f"Current filters\n\nRequired technologies:\n{required or 'Any'}\n\n"
-        f"Preferred:\n{preferred or 'None'}\n\n"
-        f"Remote only: {yes_no(filters.remote_only)}\n"
-        f"Worldwide: {yes_no(filters.worldwide_allowed)}\n"
-        f"LATAM: {yes_no(filters.latam_allowed)}\n"
-        f"South America: {yes_no(filters.south_america_allowed)}\n"
-        f"Uruguay: {yes_no(filters.uruguay_allowed)}\n\n"
-        f"Timezone: {filters.timezone}\n"
-        f"Timezone tolerance: ±{filters.timezone_tolerance_hours}h\n\n"
-        f"Excluded US-only: {yes_no(filters.exclude_us_only)}\n\n"
-        f"Minimum score: {effective.min_score}\n"
-        f"Digest time: {effective.digest_time:%H:%M}"
-    )
 
 
 def saved_job_messages(jobs: list) -> list[str]:
@@ -132,9 +102,11 @@ class CommandHandler:
         owner_telegram_id: int | None,
         bot_username: str,
         settings_handler: SettingsHandler | None = None,
+        filters_handler: FiltersHandler | None = None,
         statistics: StatisticsService | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ):
+        self.filters_handler = filters_handler
         self.statistics = statistics
         self.settings_handler = settings_handler
         self.users = users
@@ -280,15 +252,15 @@ class CommandHandler:
             for text in saved_job_messages(jobs):
                 await self._reply(chat_id, text)
         elif command == "filters":
-            effective = await self._effective(user.id)
-            await self._reply(
-                chat_id,
-                (
-                    format_filters(effective)
-                    if effective
-                    else "Notification settings are not available yet."
-                ),
-            )
+            if self.filters_handler is not None:
+                await self.filters_handler.show(user.id, chat_id)
+            else:
+                await self._reply(chat_id, "Job filters are not available yet.")
+        elif command == "cancel":
+            if self.filters_handler is not None:
+                await self.filters_handler.cancel(chat_id)
+            else:
+                await self._reply(chat_id, "Input cancelled.")
 
     async def _stats(self, chat_id: int, text: str) -> None:
         arguments = text.split()[1:]

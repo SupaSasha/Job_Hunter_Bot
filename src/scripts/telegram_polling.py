@@ -7,6 +7,8 @@ from src.bot.callbacks import CallbackHandler
 from src.bot.client import TelegramClient
 from src.bot.commands import HELP, CommandHandler
 from src.bot.dispatch import CeleryCommandDispatcher
+from src.bot.filters import FiltersHandler
+from src.bot.pending_input import PendingInputStore
 from src.bot.polling import RedisOffsetStore, poll_updates
 from src.bot.settings import SettingsHandler
 from src.bot.updates import route_update
@@ -22,6 +24,7 @@ from src.services.entitlements import EntitlementService
 from src.services.feedback import FeedbackService
 from src.services.notification_settings import NotificationSettingsService
 from src.services.statistics import StatisticsService
+from src.services.user_filters import UserFilterService
 from src.services.users import OwnerService
 from src.tasks.jobs import COLLECTOR_TASKS
 from src.tasks.notifications import send_daily_digest
@@ -40,7 +43,11 @@ async def main() -> None:
 
         await DeliveryBootstrap(async_session_factory, settings).ensure_users()
 
-        async with TelegramClient(settings.TELEGRAM_BOT_TOKEN) as client:
+        async with (
+            TelegramClient(settings.TELEGRAM_BOT_TOKEN) as client,
+            Redis.from_url(settings.REDIS_URL) as redis,
+        ):
+            pending = PendingInputStore(redis)
             bot_username = await client.get_bot_username()
             dispatcher = CeleryCommandDispatcher(
                 COLLECTOR_TASKS.values(), send_daily_digest
@@ -65,6 +72,12 @@ async def main() -> None:
                         client,
                         help_text=HELP,
                     )
+                    filters_handler = FiltersHandler(
+                        UserRepository(session),
+                        UserFilterService(session),
+                        client,
+                        pending,
+                    )
                     commands = CommandHandler(
                         UserRepository(session),
                         BotQueryRepository(session),
@@ -75,6 +88,7 @@ async def main() -> None:
                         owner_telegram_id=settings.TELEGRAM_CHAT_ID,
                         bot_username=bot_username,
                         settings_handler=settings_handler,
+                        filters_handler=filters_handler,
                         statistics=StatisticsService(
                             StatisticsRepository(session), entitlements
                         ),
@@ -84,13 +98,13 @@ async def main() -> None:
                         commands=commands,
                         callbacks=callbacks,
                         settings=settings_handler,
+                        filters=filters_handler,
                     )
 
             logger.info("Telegram command and callback polling started")
-            async with Redis.from_url(settings.REDIS_URL) as redis:
-                await poll_updates(
-                    client, handle_update, offset_store=RedisOffsetStore(redis)
-                )
+            await poll_updates(
+                client, handle_update, offset_store=RedisOffsetStore(redis)
+            )
     finally:
         await engine.dispose()
 

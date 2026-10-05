@@ -9,11 +9,11 @@ from src.schemas.digest_metrics import DigestMetrics
 from src.schemas.filters import UserFilterDTO
 from src.schemas.job import JobDTO
 from src.schemas.scoring import ScoreResult
-from src.services.default_filters import default_user_filters
 from src.services.entitlements import EntitlementService, digest_due
 from src.services.filters import FilterService
 from src.services.notifications import NotificationService
 from src.services.scoring import ScoringService
+from src.services.user_filters import UserFilterService
 
 logger = logging.getLogger(__name__)
 DigestItem = tuple[int, JobDTO, ScoreResult]
@@ -113,9 +113,11 @@ class DailyDigestService:
         metrics = DigestMetrics()
         try:
             candidates = await self.repository.candidates(user_id, now=now)
+            async with self.sessions() as session:
+                filters = await UserFilterService(session).get_filters(user_id)
             items = select_digest_jobs(
                 candidates,
-                default_user_filters(effective.timezone),
+                filters,
                 effective.min_score,
                 effective.max_jobs_per_digest,
                 metrics=metrics,

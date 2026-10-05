@@ -7,6 +7,7 @@ import pytest
 from src.bot.client import TelegramAPIError, TelegramClient
 from src.bot.commands import HELP, WELCOME, CommandHandler, parse_command
 from src.bot.dispatch import CommandDispatcher
+from src.bot.filters import FiltersHandler
 from src.bot.settings import SettingsHandler
 from src.models.job import JobORM
 from src.models.scheduling import (
@@ -69,6 +70,7 @@ def handler():
         EntitlementService(),
         owner_telegram_id=123,
         bot_username="ExampleBot",
+        filters_handler=AsyncMock(spec=FiltersHandler),
         clock=lambda: NOW,
     )
 
@@ -195,33 +197,28 @@ async def test_saved_long_unicode_is_split_and_capped_at_ten(handler):
         ("active", NOW, False),
     ],
 )
-async def test_filters_use_effective_entitlements(handler, status, end, premium):
+async def test_filters_available_regardless_of_entitlements(
+    handler, status, end, premium
+):
     handler.queries.subscription.return_value = UserSubscriptionORM(
         status=status, trial_ends_at=end, subscription_ends_at=end
     )
     await handler.handle(message("/filters"))
-    text = reply(handler)
-    assert f"Minimum score: {42 if premium else 70}" in text
-    assert f"Digest time: {'11:30' if premium else '09:00'}" in text
-    for value in (
-        "Python",
-        "FastAPI",
-        "PostgreSQL",
-        "Redis",
-        "Celery",
-        "Docker",
-        "Remote only: Yes",
-        "Timezone tolerance: ±2h",
-        "Excluded US-only: Yes",
-    ):
-        assert value in text
-    assert "trial_ends_at" not in text and "user_id" not in text
+    handler.filters_handler.show.assert_awaited_once_with(7, 123)
+    handler.queries.preferences.assert_not_awaited()
+    handler.queries.subscription.assert_not_awaited()
 
 
-async def test_missing_preferences_are_not_invented(handler):
+async def test_filters_do_not_require_notification_preferences(handler):
     handler.queries.preferences.return_value = None
     await handler.handle(message("/filters"))
-    assert reply(handler) == "Notification settings are not available yet."
+    handler.filters_handler.show.assert_awaited_once_with(7, 123)
+    handler.queries.preferences.assert_not_awaited()
+
+
+async def test_cancel_delegates_to_filter_handler(handler):
+    await handler.handle(message("/cancel"))
+    handler.filters_handler.cancel.assert_awaited_once_with(123)
 
 
 @pytest.mark.parametrize(

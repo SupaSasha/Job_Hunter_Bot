@@ -2,7 +2,7 @@ from src.schemas.filters import UserFilterDTO
 
 
 def default_user_filters(timezone: str = "America/Montevideo") -> UserFilterDTO:
-    """Temporary shared profile until per-user job filters get persistence."""
+    """Legacy owner profile, used only when bootstrapping missing saved filters."""
     return UserFilterDTO(
         required_technologies=["python"],
         preferred_technologies=["fastapi", "postgresql", "redis", "celery", "docker"],

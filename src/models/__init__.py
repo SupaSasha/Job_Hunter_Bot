@@ -9,6 +9,7 @@ from src.models.scheduling import (
     UserSubscriptionORM,
 )
 from src.models.user import UserORM
+from src.models.user_filter import UserFilterORM
 
 __all__ = [
     "CollectorRunORM",
@@ -18,6 +19,7 @@ __all__ = [
     "JobORM",
     "NotificationORM",
     "UserNotificationSettingsORM",
+    "UserFilterORM",
     "UserORM",
     "UserSubscriptionORM",
 ]

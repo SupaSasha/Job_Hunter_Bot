@@ -272,9 +272,10 @@ notification whose cooldown has elapsed. SQL selects at most
 Jobs omitted by a previous limit remain eligible only within this age window. Every candidate passes the existing `FilterService`
 and `ScoringService`. Results sort by score descending, then job ID for ties;
 effective threshold and maximum count determine the selection. Scoring weights
-are unchanged. `default_user_filters(timezone)` supplies the existing Python,
-remote, Worldwide/LATAM/South America/Uruguay profile and excludes US-only work.
-Filter persistence is deferred; this profile is shared across users.
+are unchanged. Each digest loads that user's persisted `UserFilterDTO` through
+`UserFilterService.get_filters(user_id)`. Missing rows are bootstrapped once;
+existing filters are never replaced by a shared profile. The legacy Python
+profile is used only to initialize the configured owner's missing filter row.
 
 Before any Telegram request, the service commits a `digest_runs` reservation
 with a partial **UNIQUE(user_id, local_date) WHERE status <> 'abandoned'**
@@ -381,7 +382,8 @@ IDs receive `This command is not available.` without exposing account data.
 | /help | List public commands; show a separate admin section to the owner |
 | /status | Read collector state, total jobs, effective digest settings and the user's latest digest attempt from PostgreSQL |
 | /saved | Show up to ten most recently saved jobs, without descriptions |
-| /filters | Show the current shared filter profile and effective digest time/minimum score |
+| /filters | Configure persisted job search filters with inline menus and text input |
+| /cancel | Cancel pending filter input |
 | /settings | View effective settings and edit timezone, digest time and score |
 | /collect | Owner only: enqueue Remote OK, We Work Remotely and Get on Board collection |
 | /digest | Owner only: check today's state and queue an eligible digest |
@@ -390,9 +392,10 @@ IDs receive `This command is not available.` without exposing account data.
 `CommandHandler(...).handle(message)` in `src/bot/commands.py` handles commands.
 It receives repositories, TelegramClient, a dispatcher, EntitlementService,
 the configured owner Telegram ID, the bot username and an injectable clock.
-`route_update(update, commands=..., callbacks=..., settings=...)` keeps command handling
-separate from existing callback parsing. Plain messages and edited messages
-are ignored. Commands support a matching `@BotUsername` suffix and ignore commands
+`route_update(update, commands=..., callbacks=..., settings=..., filters=...)`
+keeps commands, notification settings, job filters and feedback separate. Plain
+text is handled only when that user has pending filter input; edited messages
+are ignored. Slash commands always take precedence over pending input. Commands support a matching `@BotUsername` suffix and ignore commands
 addressed to other bots. The username is obtained once at startup using
 [getMe](https://core.telegram.org/bots/api#getme).
 [getUpdates](https://core.telegram.org/bots/api#getupdates) now requests both
@@ -447,8 +450,9 @@ start - About the bot
 help - Show available commands
 status - Bot and collector status
 saved - Saved jobs
-filters - Current job filters
+filters - Job search filters
 settings - Notification settings
+cancel - Cancel current input
 ```
 
 ## Telegram settings
@@ -469,7 +473,8 @@ Custom time and score require an active Trial or Premium entitlement. Free
 menus show locks and the actual FREE_DIGEST_TIME / FREE_MIN_SCORE configuration.
 Stored custom values survive expiration and become effective again when Premium
 is activated. Entitlements are checked again when a selection is saved.
-/settings, /filters and /status use the same effective settings policy.
+/settings and /status use the same effective notification settings policy.
+/filters manages job search preferences independently and is available on every plan.
 
 Navigation edits the existing message. Child Back buttons reopen settings;
 the root Back button opens public help. Callback data uses settings:timezone,
@@ -487,11 +492,89 @@ NotificationSettingsRepository performs user-scoped partial updates without
 committing. Existing SQL TIME fields and tables are reused; no migration is needed.
 
 For a development check, open /settings, choose a timezone, set a trial time and
-score, and compare /filters and /status. Temporarily expire the trial in the dev
+score, and compare /settings and /status. Temporarily expire the trial in the dev
 DB to verify locked custom fields and effective Free defaults, then restore the
 original subscription and preferences. Do not change production subscriptions.
 See [the settings stage report](docs/telegram-settings-report.md) for examples
 and validation results.
+
+## Persisted job filters
+
+`user_filters` stores one row per user with `UNIQUE(user_id)`, a foreign key to
+`users.id`, PostgreSQL string arrays, nullable minimum salary/currency, remote
+and US-only flags, and timezone tolerance. Notification timezone remains in
+`user_notification_settings`; the DTO mapper reads it on every request and
+sets the four legacy region booleans from `allowed_regions` so disabled regions
+cannot be re-enabled by DTO defaults. Scoring weights and notification
+reservations are unchanged.
+
+New users get empty technology/keyword/blacklist/employment/experience lists,
+Worldwide/LATAM/South America/Uruguay, all three active sources, Remote only and
+Exclude US-only enabled, tolerance ±2h, and no salary/currency restriction. The
+configured owner's missing row retains required Python and preferred FastAPI,
+PostgreSQL, Redis, Celery and Docker. This lazy bootstrap runs only for missing
+rows; reset deliberately restores the generic new-user profile. Existing user
+bootstrap/onboarding is unchanged: first /filters or digest creates filters for
+an active persisted user, while public /start does not register new accounts.
+
+`UserFilterRepository` exposes `get_by_user_id` and `add`, flushing without
+committing. `UserFilterService` owns validation, bootstrap, mapping and
+commit/rollback. It locks the parent user for bootstrap and read-modify-write
+operations to prevent duplicate creation and lost concurrent list changes.
+Services must use sessions without unrelated pending writes.
+
+/filters opens Keywords, Required/Preferred/Excluded tech, Regions, Employment,
+Experience, Salary, Sources, Blacklist, Timezone tolerance and confirmed Reset.
+Callbacks use only `filters:`. Navigation and updates edit the existing message.
+Lists support Add/Remove/Clear with comma-separated input, lowercase storage,
+ordered deduplication and shared technology aliases. Adding exclusions removes
+matching required/preferred technologies; adding an excluded technology back
+to required/preferred requires first removing its exclusion. Keywords match
+any supplied word; required technologies must all match. Blacklisted companies
+use exact case-insensitive comparison. Lists accept at most 50 entries of
+100 characters each.
+
+Regions include Worldwide, LATAM, South America, Uruguay, Americas,
+North America, Europe, EU, EMEA and APAC, with Remote only and Exclude US-only
+toggles. No enabled regions excludes jobs with known regions, preserving the
+existing filter policy. Empty employment/experience selections mean Any.
+Salary accepts only a nonnegative whole number within PostgreSQL INTEGER range;
+USD/EUR/UYU or Any currency are available, without conversion. Clear removes
+the amount and keeps the selected currency. Unknown salary/region/employment/
+experience metadata retains the existing filter behavior. At least one of
+Remote OK, We Work Remotely and Get on Board must remain enabled. Tolerance
+ranges from ±0h to ±4h; timezone itself stays in /settings. All job filters are
+available on Free/Trial/Premium; custom digest time and score retain their
+existing entitlement rules.
+
+Pending input is a small JSON Redis record under
+`telegram:user:<telegram_id>:pending_input`, with action, operation and the
+menu message ID, expiring after 600 seconds. It covers keywords, three tech
+lists, minimum salary, blacklisted words and blacklisted companies. /cancel,
+opening /filters, or navigating a filter menu clears it. Invalid input leaves
+it active until corrected or expired. Commands take priority and are never
+stored as filter input. No FSM framework or new dependencies are introduced.
+
+Migration `c41a9e327b60` adds only `user_filters`, with no data migration or
+changes to existing tables. Upgrade before running the updated application:
+
+```bash
+poetry run alembic upgrade head
+```
+
+For the initialized VPS deployment, run the existing script from the local
+project directory after reviewing the change:
+
+```bash
+./scripts/deploy.sh
+```
+
+It builds the production image, stops application writers, upgrades Alembic
+using the `api` service, and restarts services. It excludes `.env` and preserves
+PostgreSQL/Redis/Beat volumes. This filter stage does not automatically deploy,
+commit, push, or contact real Telegram. See the
+[persistent filters report](docs/user-filters-report.md) for APIs, callbacks,
+test evidence and the saved example profile.
 
 ## Feedback
 
