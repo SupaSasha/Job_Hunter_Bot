@@ -68,10 +68,12 @@ class FakeRepository:
     async def users(self, user_id):
         return self.rows
 
-    async def reserve(self, user_id, local_date, now):
-        if self.reserved:
+    async def reserve(self, user_id, local_date, now, *, manual=False):
+        if self.state.get("status") == "pending" or (self.reserved and not manual):
             return None
-        self.reserved = True
+        if not manual:
+            self.reserved = True
+        self.state = {}
         self.state["status"] = "pending"
         return 1
 
@@ -203,14 +205,20 @@ async def test_stale_date_disabled_user_and_missing_token_do_not_reserve(setup):
     client.send_message.assert_not_awaited()
 
 
-async def test_run_now_bypasses_time_but_not_daily_reservation(setup):
+async def test_run_now_bypasses_time_and_daily_limit_without_consuming_schedule(setup):
     service, client, _ = setup
     service.clock = lambda: datetime(2026, 9, 27, 10, tzinfo=UTC)
     assert (await service.send(2))["reason"] == "not_due"
     assert not service.repository.reserved
     assert (await service.send(2, run_now=True))["status"] == "sent"
-    assert (await service.send(2, run_now=True))["reason"] == "already_attempted_today"
-    client.send_message.assert_awaited_once()
+    assert not service.repository.reserved
+    service.repository.items = [(3, job(3))]
+    assert (await service.send(2, run_now=True))["sent"] == 1
+    assert client.send_message.await_count == 2
+    service.clock = lambda: datetime(2026, 9, 27, 12, tzinfo=UTC)
+    service.repository.items = []
+    assert (await service.send(2))["status"] == "empty"
+    assert (await service.send(2))["reason"] == "already_attempted_today"
 
 
 async def test_run_now_does_not_enable_disabled_delivery(setup):
@@ -219,6 +227,50 @@ async def test_run_now_does_not_enable_disabled_delivery(setup):
     assert (await service.send(2, run_now=True))["reason"] == "inactive_or_disabled"
     assert not service.repository.reserved
     client.send_message.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "language,expected",
+    [
+        ("en", "No new jobs match your filters."),
+        ("es", "No hay nuevas vacantes que coincidan con tus filtros."),
+    ],
+)
+async def test_manual_empty_digest_replies_in_saved_language(setup, language, expected):
+    service, client, notify = setup
+    service.repository.rows[0][0].language = language
+    service.repository.items = []
+    assert (await service.send(2, run_now=True))["status"] == "empty"
+    assert (await service.send(2, run_now=True))["status"] == "empty"
+    assert [call.args[1] for call in client.send_message.call_args_list] == [
+        expected,
+        expected,
+    ]
+    notify.assert_not_awaited()
+
+
+async def test_manual_request_during_another_run_does_not_send_duplicate_cards(setup):
+    service, client, notify = setup
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def hold_summary(chat_id, text):
+        if "new job matches" in text:
+            started.set()
+            await release.wait()
+        return 99
+
+    client.send_message.side_effect = hold_summary
+    first = asyncio.create_task(service.send(2, run_now=True))
+    try:
+        await started.wait()
+        second = await service.send(2, run_now=True)
+        assert second == {"status": "skipped", "reason": "in_progress"}
+        assert client.send_message.call_args.args[1] == "Digest is already in progress."
+        notify.assert_not_awaited()
+    finally:
+        release.set()
+        await first
+    assert notify.await_count == 2
 
 
 async def test_digest_persists_pipeline_and_delivery_metrics(setup):

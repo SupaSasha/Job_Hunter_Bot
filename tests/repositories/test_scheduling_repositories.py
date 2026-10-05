@@ -31,7 +31,7 @@ async def test_existing_collector_schedule_is_not_resampled(monkeypatch):
 
 async def test_reservation_uses_unique_date_and_commits_before_return():
     factory, session = sessions()
-    session.scalar.return_value = 7
+    session.scalar.side_effect = [2, None, 7]
     assert (
         await DigestRepository(factory).reserve(
             2, date(2026, 9, 27), datetime(2026, 9, 27, tzinfo=UTC)
@@ -39,10 +39,7 @@ async def test_reservation_uses_unique_date_and_commits_before_return():
         == 7
     )
     sql = str(session.scalar.call_args.args[0].compile(dialect=postgresql.dialect()))
-    assert (
-        "ON CONFLICT (user_id, local_date) WHERE status <> 'abandoned' DO NOTHING"
-        in sql
-    )
+    assert "ON CONFLICT DO NOTHING" in sql
     session.commit.assert_awaited_once()
 
 

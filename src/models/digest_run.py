@@ -2,6 +2,7 @@ from datetime import date, datetime
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -17,7 +18,7 @@ from src.models.timestamps import Timestamps
 
 
 class DigestRunORM(Timestamps, Base):
-    """One active reservation per user/day; abandoned attempts retain history."""
+    """Daily scheduled attempts and repeatable manual runs retain history."""
 
     __tablename__ = "digest_runs"
     __table_args__ = (
@@ -26,7 +27,13 @@ class DigestRunORM(Timestamps, Base):
             "user_id",
             "local_date",
             unique=True,
-            postgresql_where=text("status <> 'abandoned'"),
+            postgresql_where=text("status <> 'abandoned' AND NOT manual"),
+        ),
+        Index(
+            "uq_digest_manual_pending_user",
+            "user_id",
+            unique=True,
+            postgresql_where=text("manual AND status = 'pending'"),
         ),
         CheckConstraint(
             "status IN ('pending', 'empty', 'sent', 'partial', 'failed', 'abandoned')",
@@ -37,6 +44,9 @@ class DigestRunORM(Timestamps, Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     local_date: Mapped[date] = mapped_column(Date)
+    manual: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
     status: Mapped[str] = mapped_column(String(16), default="pending")
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

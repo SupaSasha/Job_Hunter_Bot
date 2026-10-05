@@ -1,6 +1,6 @@
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import or_, select, text, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -45,6 +45,7 @@ class DigestRepository:
                     select(DigestRunORM.id).where(
                         DigestRunORM.user_id == user_id,
                         DigestRunORM.local_date == local_date,
+                        DigestRunORM.manual.is_(False),
                         DigestRunORM.status != "abandoned",
                     )
                 )
@@ -52,17 +53,34 @@ class DigestRepository:
             )
 
     async def reserve(
-        self, user_id: int, local_date: date, now: datetime
+        self, user_id: int, local_date: date, now: datetime, *, manual: bool = False
     ) -> int | None:
         async with self.sessions() as session:
+            # Serialize scheduled/manual reservations for this user, including
+            # completed-run retries; notification uniqueness remains separate.
+            user = await session.scalar(
+                select(UserORM.id).where(UserORM.id == user_id).with_for_update()
+            )
+            if user is None:
+                return None
             await session.execute(
                 self._stale_query(now).where(DigestRunORM.user_id == user_id)
             )
+            pending = await session.scalar(
+                select(DigestRunORM.id).where(
+                    DigestRunORM.user_id == user_id,
+                    DigestRunORM.status == "pending",
+                )
+            )
+            if pending is not None:
+                await session.commit()
+                return None
             run_id = await session.scalar(
                 insert(DigestRunORM)
                 .values(
                     user_id=user_id,
                     local_date=local_date,
+                    manual=manual,
                     started_at=now,
                     status="pending",
                     selected=0,
@@ -70,10 +88,7 @@ class DigestRepository:
                     failed=0,
                     skipped=0,
                 )
-                .on_conflict_do_nothing(
-                    index_elements=["user_id", "local_date"],
-                    index_where=text("status <> 'abandoned'"),
-                )
+                .on_conflict_do_nothing()
                 .returning(DigestRunORM.id)
             )
             # This commit MUST precede the summary and every individual message.

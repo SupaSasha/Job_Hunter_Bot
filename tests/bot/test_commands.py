@@ -513,21 +513,15 @@ def test_historical_digests_do_not_appear_as_measured_zeroes():
     assert "Selected: 2 | Sent: 2" in text
 
 
-@pytest.mark.parametrize(
-    "status,response",
-    [
-        ("sent", "Digest already sent today."),
-        ("pending", "Digest is already in progress."),
-        ("empty", "No new jobs match your filters."),
-    ],
-)
-async def test_manual_digest_reports_existing_attempt(handler, status, response):
+@pytest.mark.parametrize("status", ["sent", "partial", "failed", "pending", "empty"])
+async def test_manual_digest_queues_despite_existing_daily_attempt(handler, status):
     handler.queries.last_digest.return_value = DigestRunORM(
         local_date=NOW.date(), status=status, started_at=NOW
     )
     await handler.handle(message("/digest"))
-    assert reply(handler) == response
-    handler.dispatcher.digest.assert_not_awaited()
+    assert "queued" in reply(handler)
+    handler.dispatcher.digest.assert_awaited_once_with(7)
+    handler.queries.last_digest.assert_not_awaited()
 
 
 async def test_manual_digest_can_recover_stale_attempt(handler):

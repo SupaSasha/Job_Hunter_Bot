@@ -1,7 +1,7 @@
 import logging
 import re
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 from src.bot.client import TelegramAPIError, TelegramClient
@@ -321,34 +321,6 @@ class CommandHandler:
         chat_id: int,
         language: Language = DEFAULT_LANGUAGE,
     ) -> None:
-        if command == "digest":
-            from src.config import settings
-
-            effective = await self._effective(user_id)
-            run = await self.queries.last_digest(user_id)
-            now = self.clock()
-            local_date = now.astimezone(
-                ZoneInfo(effective.timezone if effective else "UTC")
-            ).date()
-            if (
-                run is not None
-                and run.local_date == local_date
-                and run.status != "abandoned"
-            ):
-                stale = (
-                    run.status == "pending"
-                    and run.started_at is not None
-                    and run.started_at
-                    < now - timedelta(minutes=settings.DIGEST_PENDING_TIMEOUT_MINUTES)
-                )
-                if not stale:
-                    response = {
-                        "sent": t("digest.already_sent", language),
-                        "empty": t("digest.empty", language),
-                        "pending": t("digest.in_progress", language),
-                    }.get(run.status, t("digest.attempted", language))
-                    await self._reply(chat_id, response)
-                    return
         action = "collection" if command == "collect" else "digest"
         logger.info("Admin %s requested", action)
         try:

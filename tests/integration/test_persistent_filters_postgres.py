@@ -281,7 +281,11 @@ async def test_digest_two_users_different_saved_filters_and_no_repeat(pg):
     )
     assert result_a["status"] == "sent" and result_a["sent"] == 1
     assert result_b == {"status": "empty", "selected": 0, "sent": 0}
-    assert [call.args[0] for call in client.send_message.call_args_list] == [1001, 1001]
+    assert [call.args[0] for call in client.send_message.call_args_list] == [
+        1001,
+        1001,
+        1002,
+    ]
     async with pg() as session:
         runs = {run.user_id: run for run in await session.scalars(select(DigestRunORM))}
         assert runs[a].accepted_count == 1 and runs[a].filter_rejected_count == 0
@@ -298,8 +302,8 @@ async def test_digest_two_users_different_saved_filters_and_no_repeat(pg):
         clock=lambda: NOW + timedelta(days=1),
     )
     assert (await restarted.send(a, run_now=True))["status"] == "empty"
-    assert (await digest.send(a, run_now=True))["reason"] == "already_attempted_today"
-    assert client.send_message.await_count == 2
+    assert (await digest.send(a, run_now=True))["status"] == "empty"
+    assert client.send_message.await_count == 5
 
 
 async def test_local_telegram_scenario_persists_after_polling_restart(pg, fake_redis):
@@ -430,6 +434,8 @@ async def test_local_telegram_scenario_persists_after_polling_restart(pg, fake_r
     assert (await digest.send(a, run_now=True))["sent"] == 1
     count = client.send_message.await_count
     await update(text="/digest")
-    assert client.send_message.call_args.args[1] == "Digest already sent today."
-    assert dispatcher.digest.await_count == 1
+    assert client.send_message.call_args.args[1] == "Digest queued."
+    assert dispatcher.digest.await_count == 2
     assert client.send_message.await_count == count + 1
+    assert (await digest.send(a, run_now=True))["status"] == "empty"
+    assert client.send_message.call_args.args[1] == "No new jobs match your filters."

@@ -109,9 +109,16 @@ class DailyDigestService:
             return {"status": "skipped", "reason": "not_due"}
         if self.client is None:
             return {"status": "skipped", "reason": "telegram_not_configured"}
-        run_id = await self.repository.reserve(user_id, local_date, now)
+        run_id = await self.repository.reserve(user_id, local_date, now, manual=run_now)
         if run_id is None:
-            return {"status": "skipped", "reason": "already_attempted_today"}
+            if run_now:
+                await self.client.send_message(
+                    user.telegram_id, t("digest.in_progress", user_language(user))
+                )
+            return {
+                "status": "skipped",
+                "reason": "in_progress" if run_now else "already_attempted_today",
+            }
         selected = sent = failed = skipped = 0
         metrics = DigestMetrics()
         try:
@@ -130,6 +137,10 @@ class DailyDigestService:
                 run_id, selected=selected, metrics_recorded=True, **metrics.model_dump()
             )
             if not items:
+                if run_now:
+                    await self.client.send_message(
+                        user.telegram_id, t("digest.empty", user_language(user))
+                    )
                 await self.repository.update(
                     run_id, status="empty", finished_at=self.clock()
                 )

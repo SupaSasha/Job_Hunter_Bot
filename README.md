@@ -278,16 +278,21 @@ existing filters are never replaced by a shared profile. The legacy Python
 profile is used only to initialize the configured owner's missing filter row.
 
 Before any Telegram request, the service commits a `digest_runs` reservation
-with a partial **UNIQUE(user_id, local_date) WHERE status <> 'abandoned'**
-index. Concurrent or repeated tasks cannot reserve the same date while a
-non-abandoned run exists. Empty selection records `empty` and sends no message.
+with a partial **UNIQUE(user_id, local_date) WHERE status <> 'abandoned' AND NOT manual**
+index for scheduled runs. Scheduled tasks cannot reserve the same date while a
+non-abandoned scheduled run exists. Manual requests have separate history and
+can run repeatedly after a previous run finishes. Reservations lock the user
+row to prevent overlapping scheduled/manual runs; a partial unique index also
+prevents simultaneous pending manual runs. Empty scheduled selection records
+`empty` and sends no message; empty manual selection sends a localized reply.
 A nonempty run sends a short summary (up to five top titles), then existing job
 cards with feedback buttons, through `NotificationService`. Progress and summary
 message ID are recorded. Final status is `sent`, `partial` or `failed`.
 An interrupted `pending` run becomes `abandoned` after
 `DIGEST_PENDING_TIMEOUT_MINUTES` (default 30, minimum 11). Recovery preserves
-the old row and permits a new reservation; completed attempts still block that
-date. Digest service execution is bounded to 600 seconds. Dates follow the
+the old row and permits a new reservation; completed scheduled attempts still
+block automatic delivery on that date. Digest service execution is bounded to
+600 seconds. Dates follow the
 user's timezone, including DST and UTC date rollover.
 
 The existing **UNIQUE(user_id, job_id)** notification reservation is committed
@@ -430,14 +435,19 @@ Replies use plain text. Logs record command categories and sanitized error types
 not raw command arguments or Telegram secrets. A reply timeout is logged without
 replaying a task that may already have been queued.
 
-Manual `run_now=True` bypasses only the local scheduled-time check. It preserves
-active/enabled-user checks, effective filters and threshold, individual delivery
-reservations and the one-attempt-per-local-day constraint. `/digest` checks
-today's state before publication and replies `Digest already sent today.`,
-`Digest is already in progress.`, or `Digest already attempted today.` as
-appropriate. Stale pending runs may be queued for recovery. A concurrent
-dispatch is still resolved by the database reservation, so a queued task can
-skip; no matching jobs also means no cards. `/status` shows the latest attempt.
+Manual `run_now=True` bypasses the local scheduled-time check and the automatic
+one-attempt-per-day limit. It preserves active/enabled-user checks, effective
+filters and threshold, and individual notification reservations. `/digest`
+always queues a manual request after authorization. Completed, empty, failed
+or partial runs do not block another manual request that day. The worker sends
+only new eligible jobs; existing sent/ambiguous notifications remain excluded.
+If none match, it replies `No new jobs match your filters.` in the saved
+language. During an active reservation, it replies `Digest is already in
+progress.` and sends no duplicate cards. Stale pending runs remain recoverable.
+Manual runs do not consume the automatic day's attempt. `/status` shows the
+latest attempt. Migration `f72c4ea83910` adds the manual-run flag and updates
+reservation indexes, preserving existing run history. See
+[the manual digest report](docs/manual-digest-report.md).
 
 To check manually, start worker, Beat and polling using the commands above, then
 send `/start`, `/help`, `/status`, `/saved` and `/filters` in the owner's
@@ -534,7 +544,7 @@ remain English for the owner; its command replies/errors are localized.
 Vacancy titles, companies, descriptions, currencies, technologies, URLs,
 source brands and canonical filter values are not translated. Language changes
 neither selection nor scoring, scheduling, salary rules, trials or reservations.
-An already empty digest can be reported in the user's language by /digest;
+An empty manual digest reports no new matching jobs in the user's language;
 empty scheduled digests keep their existing no-message behavior.
 
 BotFather descriptions are configured manually, with unchanged command names.
