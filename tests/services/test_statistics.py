@@ -48,6 +48,7 @@ async def test_empty_stats_and_consistent_period_boundaries(repository, period, 
         "jobicy",
         "the_muse",
         "hacker_news",
+        "jooble",
     }
     assert all(
         getattr(stats, name) is None

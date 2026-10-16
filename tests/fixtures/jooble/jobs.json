@@ -1,0 +1,46 @@
+{
+  "note": "Official Jooble documented schema, authored compact values. No live key is configured; remote/salary variants are parser cases, not observed live jobs.",
+  "jobs": [
+    {
+      "id": 123,
+      "title": "Senior Software Engineer",
+      "location": "Remote",
+      "snippet": "<p>Build useful <b>software</b> &amp; APIs.</p>",
+      "salary": "120,000 - 160,000 USD/year",
+      "source": "Example Board",
+      "type": "Full-time",
+      "link": "https://uk.jooble.org/jdp/123",
+      "company": "Acme &amp; Co",
+      "updated": "2026-10-16T09:30:00Z"
+    },
+    {
+      "id": 124,
+      "title": "Backend Developer",
+      "location": "London, United Kingdom",
+      "snippet": "An office-based contract position.",
+      "salary": "",
+      "source": "Example Board",
+      "type": "Contract",
+      "link": "https://uk.jooble.org/jdp/124",
+      "company": "Example Ltd",
+      "updated": "2026-10-15T12:55:35.3870000"
+    },
+    {
+      "id": 125,
+      "title": "Support Engineer",
+      "location": "Work from home",
+      "snippet": "Authored short snippet.",
+      "salary": "17,600 UAH",
+      "source": "jooble",
+      "type": "Full-time",
+      "link": "https://ua.jooble.org/jdp/125",
+      "company": "Example Corp",
+      "updated": "2026-10-15T12:55:35+03:00"
+    },
+    {
+      "id": 126,
+      "title": "Platform Engineer",
+      "link": "https://employer.example/jobs/126"
+    }
+  ]
+}

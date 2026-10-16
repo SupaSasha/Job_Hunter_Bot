@@ -147,6 +147,7 @@ async def test_migration_adds_new_source_without_reenabling_old_disabled_sources
             "jobicy",
             "the_muse",
             "hacker_news",
+            "jooble",
         ]
         assert rows[1].sources == [
             "remoteok",
@@ -154,6 +155,7 @@ async def test_migration_adds_new_source_without_reenabling_old_disabled_sources
             "jobicy",
             "the_muse",
             "hacker_news",
+            "jooble",
         ]
         assert all(row.min_salary == 2500 for row in rows)
         assert (await session.get(UserORM, ids[0])).language == "es"

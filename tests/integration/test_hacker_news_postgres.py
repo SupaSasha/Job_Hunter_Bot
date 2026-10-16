@@ -144,9 +144,9 @@ async def test_data_migration_preserves_selections_other_preferences_and_new_def
             await session.scalars(select(UserFilterORM).order_by(UserFilterORM.user_id))
         )
         assert [row.sources for row in rows] == [
-            old_sources + ["hacker_news"],
-            ["jobicy", "hacker_news"],
-            ["hacker_news"],
+            old_sources + ["hacker_news", "jooble"],
+            ["jobicy", "hacker_news", "jooble"],
+            ["hacker_news", "jooble"],
         ]
         assert all(
             row.min_salary == 2500 and row.keywords == ["backend"] for row in rows
@@ -159,7 +159,7 @@ async def test_data_migration_preserves_selections_other_preferences_and_new_def
         await session.commit()
         assert set(
             (await UserFilterService(session).get_filters(fresh.id)).sources
-        ) == set(old_sources + ["hacker_news"])
+        ) == set(old_sources + ["hacker_news", "jooble"])
 
 
 async def test_downgrade_refuses_to_empty_hacker_news_only_selection(pg):

@@ -14,6 +14,13 @@ class NetworkLogFilter(logging.Filter):
             redacted,
             flags=re.IGNORECASE,
         )
+        # Jooble authenticates in the last /api/<key> path segment. Relative
+        # httpcore request targets omit the hostname, so redact both forms.
+        redacted = re.sub(
+            r"(/api/)[^/?\s\"'<>\\]+(?=[?\s\"'<>\\]|$)",
+            r"\1<redacted>",
+            redacted,
+        )
         if message != redacted:
             record.msg = redacted
             record.args = ()

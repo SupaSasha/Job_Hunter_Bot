@@ -1,14 +1,16 @@
 # Job Hunter Bot
 
 A Telegram bot that finds remote jobs from **Remote OK**, **We Work Remotely**,
-**Get on Board**, **Himalayas**, **Jobicy**, **The Muse** and **Hacker News — Who is
-hiring?**. It filters jobs by your preferences and sends daily digests.
+**Get on Board**, **Himalayas**, **Jobicy**, **The Muse**, **Hacker News — Who is
+hiring?** and **Jooble**. It filters jobs by your preferences and sends daily digests.
 
 - Personal filters for technologies, keywords, regions, salary and experience.
 - Match scoring, saved vacancies and feedback buttons.
 - English and Spanish interface, with a saved language preference.
 
 Built with Python, FastAPI, PostgreSQL, Redis and Celery.
+
+Jooble needs a country-specific API key and explicit [market configuration](docs/project-guide.md#jooble).
 
 ## Local setup
 

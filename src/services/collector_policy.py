@@ -58,6 +58,12 @@ COLLECTOR_POLICIES = {
         ((time(13), time(14)),),
         display_name="Hacker News",
     ),
+    "jooble": CollectorPolicy(
+        "jooble",
+        "jobs.collect_jooble",
+        ((time(9), time(10)), (time(21), time(22))),
+        display_name="Jooble",
+    ),
 }
 
 

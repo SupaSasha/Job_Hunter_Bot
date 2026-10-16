@@ -29,9 +29,14 @@ async def fetch_json(
     source: str,
     params,
     max_response_bytes: int,
+    method: str = "GET",
+    json_body: dict | None = None,
 ) -> object:
     try:
-        async with client.stream("GET", url, params=params) as response:
+        options = {"params": params}
+        if json_body is not None:
+            options["json"] = json_body
+        async with client.stream(method, url, **options) as response:
             if response.status_code == 429:
                 raise CollectionError(
                     f"{source} HTTP 429 rate limited",

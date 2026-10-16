@@ -3,12 +3,12 @@
 import logging
 import re
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
 
 import httpx
 
 from src.collectors.base import BaseJobCollector, CollectionError
 from src.collectors.http import fetch_json
+from src.collectors.salary import parse_salary_text
 from src.collectors.skills import TECHNICAL_CATEGORIES
 from src.collectors.text import html_to_text
 from src.schemas.job import JobDTO
@@ -52,14 +52,6 @@ EXPERIENCE = re.compile(
 )
 UTC_LABEL = re.compile(
     r"\b(?:UTC|GMT)\s*[+-]\s*\d{1,2}(?::\d{2})?(?![\d.:])", re.IGNORECASE
-)
-AMOUNT = r"(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?"
-SALARY = re.compile(
-    rf"(?<!\w)(?P<currency>USD|EUR|GBP|[$€£])\s*"
-    rf"(?P<low>{AMOUNT})(?P<low_k>k)?"
-    rf"(?:\s*(?:[-–—]|to)\s*[$€£]?\s*(?P<high>{AMOUNT})(?P<high_k>k)?)?"
-    r"(?![\w,.])",
-    re.IGNORECASE,
 )
 
 
@@ -238,34 +230,6 @@ def _extract_technologies(text: str) -> list[str]:
     return sorted(result)
 
 
-def _extract_salary(text: str) -> tuple[int | None, int | None, str | None, str | None]:
-    matches = list(SALARY.finditer(text))
-    if len(matches) != 1:
-        return None, None, None, None
-    match = matches[0]
-    if match["high"] and bool(match["low_k"]) != bool(match["high_k"]):
-        return None, None, None, None
-
-    def amount(name, suffix):
-        value = Decimal(match[name].replace(",", "")) * (1000 if match[suffix] else 1)
-        return int(value) if value == value.to_integral_value() else None
-
-    low = amount("low", "low_k")
-    high = amount("high", "high_k") if match["high"] else low
-    if low is None or high is None or low > high or high > 2_147_483_647:
-        return None, None, None, None
-    currency = {"€": "EUR", "£": "GBP", "$": None}.get(
-        match["currency"], match["currency"].upper()
-    )
-    period = None
-    suffix = text[match.end() : match.end() + 25]
-    if re.match(r"\s*(?:/|per\s+)(?:h(?:ou)?r?s?|hour)\b", suffix, re.I):
-        period = "hourly"
-    elif re.match(r"\s*(?:/|per\s+)(?:year|yr|annum)\b", suffix, re.I):
-        period = "yearly"
-    return low, high, currency, period
-
-
 def parse_comment(
     raw: dict, *, thread_id: int, collected_at: datetime | None = None
 ) -> JobDTO | None:
@@ -311,7 +275,9 @@ def parse_comment(
     ):
         return None
     salary = (
-        _extract_salary(text) if title != "Multiple roles" else (None, None, None, None)
+        parse_salary_text(text)
+        if title != "Multiple roles"
+        else (None, None, None, None)
     )
     return JobDTO(
         source="hacker_news",

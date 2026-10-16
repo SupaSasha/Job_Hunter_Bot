@@ -1,3 +1,4 @@
+import re
 from datetime import time
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -28,6 +29,11 @@ class Settings(BaseSettings):
     JOBICY_MAX_PAGES: int = Field(default=2, ge=1, le=5)
     THE_MUSE_MAX_PAGES: int = Field(default=3, ge=1, le=5)
     THE_MUSE_API_KEY: str | None = Field(default=None, repr=False)
+    JOOBLE_API_KEY: str | None = Field(default=None, repr=False)
+    JOOBLE_API_DOMAIN: str | None = None
+    JOOBLE_SEARCH_LOCATION: str | None = None
+    JOOBLE_MAX_PAGES_PER_QUERY: int = Field(default=1, ge=1, le=3)
+    JOOBLE_MAX_JOBS_PER_RUN: int = Field(default=40, ge=1, le=200)
     TRIAL_DAYS: int = Field(default=7, ge=1)
     FREE_DIGEST_TIME: time = time(9)
     FREE_MIN_SCORE: int = Field(default=70, ge=0, le=100)
@@ -63,12 +69,27 @@ class Settings(BaseSettings):
         "TELEGRAM_CHAT_ID",
         "HIMALAYAS_API_KEY",
         "THE_MUSE_API_KEY",
+        "JOOBLE_API_KEY",
+        "JOOBLE_API_DOMAIN",
+        "JOOBLE_SEARCH_LOCATION",
         mode="before",
     )
     @classmethod
     def empty_telegram_setting(cls, value: object) -> object:
         if isinstance(value, str):
             return value.strip() or None
+        return value
+
+    @field_validator("JOOBLE_API_DOMAIN")
+    @classmethod
+    def valid_jooble_domain(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.lower()
+        if not re.fullmatch(r"(?:[a-z]{2}\.)?jooble\.org", value):
+            raise ValueError(
+                "Use the Jooble domain where the key was issued, without a URL path"
+            )
         return value
 
     @property

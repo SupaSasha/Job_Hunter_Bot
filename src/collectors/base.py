@@ -14,6 +14,10 @@ class CollectionError(RuntimeError):
         self.retry_at = retry_at
 
 
+class CollectorConfigurationError(CollectionError):
+    """Required source credentials or market settings are missing."""
+
+
 class BaseJobCollector(ABC):
     """Shared contract for all job collectors."""
 

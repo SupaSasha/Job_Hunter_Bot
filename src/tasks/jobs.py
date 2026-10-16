@@ -78,6 +78,15 @@ def collect_hacker_news(expected_next_run: str | None = None) -> dict:
     return asyncio.run(collect_hacker_news_async(expected_next_run))
 
 
+async def collect_jooble_async(expected_next_run: str | None = None) -> dict:
+    return await collect_source_async("jooble", expected_next_run)
+
+
+@celery_app.task(name="jobs.collect_jooble")
+def collect_jooble(expected_next_run: str | None = None) -> dict:
+    return asyncio.run(collect_jooble_async(expected_next_run))
+
+
 COLLECTOR_TASKS = {
     "remoteok": collect_remoteok,
     "weworkremotely": collect_weworkremotely,
@@ -86,4 +95,5 @@ COLLECTOR_TASKS = {
     "jobicy": collect_jobicy,
     "the_muse": collect_the_muse,
     "hacker_news": collect_hacker_news,
+    "jooble": collect_jooble,
 }
