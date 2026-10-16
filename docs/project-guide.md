@@ -3,7 +3,7 @@
 Detailed setup, configuration and operational reference. For a quick start, see
 [the README](../README.md). Run all commands from the project root.
 
-FastAPI foundation, Remote OK, We Work Remotely and Get on Board collection, and a Telegram daily job digest.
+FastAPI foundation, Remote OK, We Work Remotely, Get on Board and Himalayas collection, and a Telegram daily job digest.
 PostgreSQL and Redis run in Docker; Python processes run locally through Poetry.
 
 Project code, comments, documentation and tests use English. The Telegram
@@ -82,7 +82,7 @@ accepted for compatibility but no longer control collection or digest delivery.
 
 ## Collection
 
-`RemoteOKCollector / WeWorkRemotelyCollector / GetOnBoardCollector -> JobDTO -> NormalizationService -> JobSaveService (DeduplicationService) -> PostgreSQL`.
+`RemoteOKCollector / WeWorkRemotelyCollector / GetOnBoardCollector / HimalayasCollector -> JobDTO -> NormalizationService -> JobSaveService (DeduplicationService) -> PostgreSQL`.
 No filtering, scoring or Telegram delivery runs in collection.
 
 `JobPipeline(save_service).run(jobs)` returns
@@ -100,6 +100,7 @@ Manual collection, even without Telegram credentials:
 poetry run python -m src.scripts.collect_remoteok
 poetry run python -m src.scripts.collect_weworkremotely
 poetry run python -m src.scripts.collect_getonboard
+poetry run python -m src.scripts.collect_himalayas
 ```
 
 Or enqueue a worker task:
@@ -116,6 +117,7 @@ Registered sources use separate local windows in SCHEDULER_TIMEZONE
 | remoteok | 02:00–04:00, 10:00–12:00, 18:00–20:00 | jobs.collect_remoteok | collector:remoteok:lock |
 | weworkremotely | 04:00–06:00, 16:00–18:00 | jobs.collect_weworkremotely | collector:weworkremotely:lock |
 | getonboard | 06:00–08:00, 20:00–22:00 | jobs.collect_getonboard | collector:getonboard:lock |
+| himalayas | 06:00–07:00, 14:00–15:00, 22:00–23:00 | jobs.collect_himalayas | collector:himalayas:lock |
 
 The small collector, policy and task registries contain only implemented sources.
 On first dispatch, the missing state is initialized in the nearest window
@@ -240,10 +242,23 @@ poetry run python -m src.collectors.getonboard
 
 The persistence script above uses the existing CollectionService, source lock,
 CollectorState and JobPipeline. Jobs enter the shared jobs table and existing
-daily digest; collection sends no messages. /collect publishes three independent
-tasks, /status displays all three states, and job cards use the shared source
+daily digest; collection sends no messages. /collect publishes four independent
+tasks, /status displays all four states, and job cards use the shared source
 name helper to display Get on Board. See [the stage report](getonboard-stage-report.md)
 for real collection counts, LATAM observations and verification results.
+
+## Himalayas
+
+The official JSON feed uses bounded cursor pagination: up to 20 jobs per page,
+`HIMALAYAS_MAX_PAGES=3` by default (maximum 5). An optional `HIMALAYAS_API_KEY`
+uses an Authorization header for higher limits; anonymous collection also works.
+The source refreshes on a daily cache, so scheduled checks may return duplicates.
+Himalayas attribution and the source application URL are kept in job cards.
+
+Migration `a814d5c0732e` adds Himalayas to each saved source selection without
+re-enabling previously disabled sources. New profiles use the active policy
+registry. See [the implementation and data audit](himalayas-stage-report.md)
+for API/schema observations, timezone limitations, live counts and examples.
 
 ## Daily delivery
 
@@ -256,6 +271,7 @@ Beat tasks:
 | jobs.collect_remoteok | Due Remote OK collector or manual task |
 | jobs.collect_weworkremotely | Due WWR collector or manual task |
 | jobs.collect_getonboard | Due Get on Board collector or manual task |
+| jobs.collect_himalayas | Due Himalayas collector or manual task |
 | notifications.send_daily_digest | Due user or manual task |
 
 Tasks are thin `asyncio.run` wrappers. Every invocation creates and disposes its
@@ -396,7 +412,7 @@ IDs receive `This command is not available.` without exposing account data.
 | /filters | Configure persisted job search filters with inline menus and text input |
 | /cancel | Cancel pending filter input |
 | /settings | Choose English/Español; view notification settings and edit timezone, digest time and score |
-| /collect | Owner only: enqueue Remote OK, We Work Remotely and Get on Board collection |
+| /collect | Owner only: enqueue Remote OK, We Work Remotely, Get on Board and Himalayas collection |
 | /digest | Owner only: check today's state and queue an eligible digest |
 | /stats [24h\|7d\|30d] | Owner only: read historical pipeline statistics; default 7d |
 
@@ -413,7 +429,7 @@ addressed to other bots. The username is obtained once at startup using
 `message` and `callback_query` updates. Both use the persistent polling checkpoint.
 
 `BotQueryRepository` performs read-only status/settings queries. /status lists
-all three registered collectors and their persisted last success, next run and status.
+all four registered collectors and their persisted last success, next run and status.
 Missing state is shown as Never / Not scheduled, without making up timestamps.
 `FeedbackRepository.get_saved_jobs_for_user(user_id, limit=10)` selects only
 that user's `saved` feedback, newest update first. Saved-job output is split
@@ -597,7 +613,7 @@ cannot be re-enabled by DTO defaults. Scoring weights and notification
 reservations are unchanged.
 
 New users get empty technology/keyword/blacklist/employment/experience lists,
-Worldwide/LATAM/South America/Uruguay, all three active sources, Remote only and
+Worldwide/LATAM/South America/Uruguay, all active sources, Remote only and
 Exclude US-only enabled, tolerance ±2h, and no salary/currency restriction. The
 configured owner's missing row retains required Python and preferred FastAPI,
 PostgreSQL, Redis, Celery and Docker. This lazy bootstrap runs only for missing

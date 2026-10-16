@@ -115,6 +115,7 @@ def test_invalid_url() -> None:
         ("remoteok", "Remote OK"),
         ("weworkremotely", "We Work Remotely"),
         ("getonboard", "Get on Board"),
+        ("himalayas", "Himalayas"),
     ],
 )
 def test_shared_source_display_names(job, source, label):

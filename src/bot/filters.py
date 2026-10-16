@@ -13,9 +13,10 @@ from src.i18n import (
     user_language,
     validation_message,
 )
+from src.models.user_filter import DEFAULT_SOURCES
 from src.repositories.users import UserRepository
 from src.schemas.filters import UserFilterDTO
-from src.services.collector_policy import source_display_name
+from src.services.collector_policy import COLLECTOR_POLICIES, source_display_name
 from src.services.user_filters import (
     CURRENCIES,
     EMPLOYMENT_TYPES,
@@ -42,7 +43,7 @@ TOGGLE_EDITORS = {
     "sources": (
         "sources",
         "label.sources",
-        ("remoteok", "weworkremotely", "getonboard"),
+        DEFAULT_SOURCES,
     ),
 }
 ROOT_ITEMS = tuple(
@@ -65,7 +66,7 @@ ROOT_ITEMS = tuple(
 
 
 def label(value: str, language: Language = DEFAULT_LANGUAGE) -> str:
-    if value in {"remoteok", "weworkremotely", "getonboard"}:
+    if value in COLLECTOR_POLICIES:
         return source_display_name(value)
     return display_label(value, language)
 

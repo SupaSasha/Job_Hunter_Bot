@@ -382,30 +382,38 @@ async def test_status_lists_each_persisted_source_and_missing_registered_state(h
     assert "We Work Remotely\nLast success: Never" in reply(handler)
 
 
-async def test_getonboard_status_and_never_run_placeholder(handler):
+@pytest.mark.parametrize(
+    "source,name", [("getonboard", "Get on Board"), ("himalayas", "Himalayas")]
+)
+async def test_source_status_and_never_run_placeholder(handler, source, name):
     await handler.handle(message("/status"))
-    assert "Get on Board\nLast success: Never" in reply(handler)
+    assert f"{name}\nLast success: Never" in reply(handler)
     handler.queries.collector_states.return_value.append(
         CollectorStateORM(
-            source="getonboard",
+            source=source,
             last_success_at=NOW,
             next_run_at=NOW + timedelta(hours=8),
             last_status="success",
         )
     )
     await handler.handle(message("/status"))
-    assert "Get on Board\nLast success: 2026-09-28 12:00" in reply(handler)
+    assert f"{name}\nLast success: 2026-09-28 12:00" in reply(handler)
     assert "Remote OK" in reply(handler) and "We Work Remotely" in reply(handler)
 
 
-async def test_owner_collect_dispatches_all_three_real_registered_tasks(handler):
+async def test_owner_collect_dispatches_all_four_real_registered_tasks(handler):
     from contextlib import ExitStack
     from unittest.mock import Mock, patch
 
     from src.bot.dispatch import CeleryCommandDispatcher
     from src.tasks.jobs import COLLECTOR_TASKS
 
-    assert set(COLLECTOR_TASKS) == {"remoteok", "weworkremotely", "getonboard"}
+    assert set(COLLECTOR_TASKS) == {
+        "remoteok",
+        "weworkremotely",
+        "getonboard",
+        "himalayas",
+    }
     with ExitStack() as stack:
         publishers = [
             stack.enter_context(patch.object(task, "delay"))

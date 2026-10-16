@@ -1,0 +1,95 @@
+[
+  {
+    "guid": "https://himalayas.app/companies/example/jobs/backend-engineer",
+    "applicationLink": "https://himalayas.app/companies/example/jobs/backend-engineer",
+    "title": "Backend Engineer",
+    "companyName": "Example Labs",
+    "description": "<p>Build <b>APIs</b> &amp; services.</p>",
+    "employmentType": "Full Time",
+    "minSalary": 90000,
+    "maxSalary": 120000,
+    "salaryPeriod": "annual",
+    "currency": "USD",
+    "locationRestrictions": [],
+    "timezoneRestrictions": [],
+    "seniority": [
+      "Mid-level"
+    ],
+    "categories": [
+      "Python",
+      "FastAPI",
+      "PostgreSQL",
+      "Product Management"
+    ],
+    "pubDate": 1792151413
+  },
+  {
+    "guid": "https://himalayas.app/companies/gofluent/jobs/corporate-czech-trainer-1650472183",
+    "applicationLink": "https://himalayas.app/companies/gofluent/jobs/corporate-czech-trainer-1650472183",
+    "title": "Corporate Czech Trainer",
+    "companyName": "goFLUENT",
+    "employmentType": "Contractor",
+    "minSalary": null,
+    "maxSalary": null,
+    "currency": null,
+    "salaryPeriod": "annual",
+    "locationRestrictions": [
+      "Bolivia",
+      "Uruguay"
+    ],
+    "timezoneRestrictions": [
+      -4,
+      -3
+    ],
+    "seniority": [
+      "Mid-level"
+    ],
+    "categories": [
+      "Language-Instructor",
+      "Corporate-Trainer",
+      "Language-Tutor",
+      "Online-Teacher",
+      "Czech-Trainer",
+      "Corporate-Language-Trainer",
+      "Czech-Language-Tutor",
+      "Czech-Language-Specialist"
+    ],
+    "pubDate": 1792151366,
+    "description": "<p>Work with the remote team.</p>"
+  },
+  {
+    "guid": "https://himalayas.app/companies/bmo/jobs/associate-product-owner-ivr",
+    "applicationLink": "https://himalayas.app/companies/bmo/jobs/associate-product-owner-ivr",
+    "title": "Associate Product Owner - IVR",
+    "companyName": "BMO",
+    "employmentType": "Full Time",
+    "minSalary": 70000,
+    "maxSalary": 150000,
+    "currency": "CAD",
+    "salaryPeriod": "annual",
+    "locationRestrictions": [
+      "Canada"
+    ],
+    "timezoneRestrictions": [
+      -8,
+      -7,
+      -6,
+      -5,
+      -4,
+      -3.5
+    ],
+    "seniority": [
+      "Mid-level"
+    ],
+    "categories": [
+      "Associate-Product-Owner",
+      "Product-Owner",
+      "Product-Manager",
+      "Voice-Product-Manager",
+      "Contact-Center-Product-Owner",
+      "Voice-Channel-Product-Owner"
+    ],
+    "pubDate": 1792151012,
+    "description": "<p>Work with the remote team.</p>"
+  }
+]

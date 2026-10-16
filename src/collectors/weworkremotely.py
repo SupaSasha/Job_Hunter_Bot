@@ -10,6 +10,7 @@ from xml.etree import ElementTree as ET
 import httpx
 
 from src.collectors.base import BaseJobCollector, CollectionError
+from src.collectors.skills import technical_categories
 from src.collectors.text import html_to_text
 from src.schemas.job import JobDTO
 
@@ -36,60 +37,6 @@ def _job_url(value: str) -> str:
     ):
         raise ValueError("Missing valid WWR job URL")
     return urlunsplit(("https", "weworkremotely.com", parsed.path.rstrip("/"), "", ""))
-
-
-# Explicit technical skills/categories only; never search job descriptions.
-_TECHNICAL = {
-    "python",
-    "django",
-    "fastapi",
-    "postgresql",
-    "redis",
-    "celery",
-    "docker",
-    "javascript",
-    "typescript",
-    "node.js",
-    "nest.js",
-    "react",
-    "vue",
-    "angular",
-    "java",
-    "spring",
-    "go",
-    "golang",
-    "rust",
-    "ruby",
-    "rails",
-    "php",
-    "laravel",
-    "c",
-    "c++",
-    "c#",
-    ".net",
-    "sql",
-    "mysql",
-    "mongodb",
-    "kubernetes",
-    "aws",
-    "azure",
-    "gcp",
-    "devops",
-    "backend",
-    "back-end dev",
-    "front-end dev",
-    "full stack dev",
-    "api development",
-    "database",
-    "mobile app dev",
-    "cross-browser development",
-    "ai model development",
-    "artificial intelligence (ai)",
-    "back-end programming",
-    "front-end programming",
-    "full-stack programming",
-    "devops and sysadmin",
-}
 
 
 def parse_job_item(item: ET.Element, *, collected_at: datetime | None = None) -> JobDTO:
@@ -122,13 +69,7 @@ def parse_job_item(item: ET.Element, *, collected_at: datetime | None = None) ->
     )
     skills = re.split(r",|\s+and\s+", field("skills"))
     categories = [(node.text or "").strip() for node in item.findall("category")]
-    technologies = list(
-        dict.fromkeys(
-            skill.strip()
-            for skill in [*skills, *categories]
-            if skill.strip().lower() in _TECHNICAL
-        )
-    )
+    technologies = technical_categories([*skills, *categories])
     return JobDTO(
         source="weworkremotely",
         external_id=external_id,

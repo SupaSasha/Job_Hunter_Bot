@@ -4,9 +4,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from src.db.base import Base
 from src.models.timestamps import Timestamps
+from src.services.collector_policy import COLLECTOR_POLICIES
 
 DEFAULT_REGIONS = ("worldwide", "latam", "south_america", "uruguay")
-DEFAULT_SOURCES = ("remoteok", "weworkremotely", "getonboard")
+DEFAULT_SOURCES = tuple(COLLECTOR_POLICIES)
 
 
 def list_column(values: tuple[str, ...] = ()):

@@ -1,15 +1,14 @@
 """Bounded collection from Get on Board's official public JSON API."""
 
 import asyncio
-import json
 import logging
-from datetime import UTC, datetime, timedelta
-from email.utils import parsedate_to_datetime
+from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
 import httpx
 
 from src.collectors.base import BaseJobCollector, CollectionError
+from src.collectors.http import fetch_json
 from src.collectors.text import html_to_text
 from src.schemas.job import JobDTO
 
@@ -158,16 +157,6 @@ def parse_page(payload: dict) -> tuple[list[JobDTO], int | None]:
     return jobs, pages
 
 
-def _retry_at(value: str) -> datetime | None:
-    try:
-        if value.isascii() and value.isdigit():
-            return datetime.now(UTC) + timedelta(seconds=int(value))
-        result = parsedate_to_datetime(value)
-        return result.astimezone(UTC) if result.tzinfo else None
-    except (ValueError, TypeError, OverflowError):
-        return None
-
-
 class GetOnBoardCollector(BaseJobCollector):
     source_name = "getonboard"
     api_url = "https://www.getonbrd.com/api/v0/categories/programming/jobs"
@@ -210,30 +199,13 @@ class GetOnBoardCollector(BaseJobCollector):
                         ("lang", "en"),
                         *[("expand[]", name) for name in self.expansions],
                     ]
-                    async with client.stream(
-                        "GET", self.api_url, params=params
-                    ) as response:
-                        if response.status_code == 429:
-                            raise CollectionError(
-                                "Get on Board HTTP 429 rate limited",
-                                retry_at=_retry_at(
-                                    response.headers.get("Retry-After", "")
-                                ),
-                            )
-                        response.raise_for_status()
-                        content = bytearray()
-                        async for chunk in response.aiter_bytes():
-                            content.extend(chunk)
-                            if len(content) > self.max_response_bytes:
-                                raise CollectionError(
-                                    "Get on Board response exceeds size limit"
-                                )
-                    try:
-                        payload = json.loads(content)
-                    except (ValueError, UnicodeDecodeError):
-                        raise CollectionError(
-                            "Get on Board returned invalid JSON"
-                        ) from None
+                    payload = await fetch_json(
+                        client,
+                        self.api_url,
+                        source="Get on Board",
+                        params=params,
+                        max_response_bytes=self.max_response_bytes,
+                    )
                     batch, total_pages = parse_page(payload)
                     added = 0
                     for job in batch:

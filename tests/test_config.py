@@ -29,16 +29,20 @@ def test_empty_example_credentials_are_optional(settings_class) -> None:
     assert settings.TELEGRAM_CHAT_ID is None
     assert settings.MIN_NOTIFICATION_SCORE == 70
     assert settings.MAX_NOTIFICATIONS_PER_RUN == 5
+    assert settings.HIMALAYAS_API_KEY is None
+    assert settings.HIMALAYAS_MAX_PAGES == 3
 
 
 def test_token_is_not_in_repr_and_big_chat_id_is_supported(settings_class) -> None:
     settings = settings_class(
         _env_file=None,
         TELEGRAM_BOT_TOKEN="  secret-token  ",
+        HIMALAYAS_API_KEY="private-api-key",
         TELEGRAM_CHAT_ID="1234567890123",
     )
     assert settings.TELEGRAM_BOT_TOKEN == "secret-token"
     assert "secret-token" not in repr(settings)
+    assert "private-api-key" not in repr(settings)
     assert settings.TELEGRAM_CHAT_ID == 1234567890123
 
 

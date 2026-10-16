@@ -32,6 +32,12 @@ COLLECTOR_POLICIES = {
         ((time(4), time(6)), (time(16), time(18))),
         display_name="We Work Remotely",
     ),
+    "himalayas": CollectorPolicy(
+        "himalayas",
+        "jobs.collect_himalayas",
+        ((time(6), time(7)), (time(14), time(15)), (time(22), time(23))),
+        display_name="Himalayas",
+    ),
 }
 
 

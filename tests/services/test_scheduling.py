@@ -210,23 +210,31 @@ def test_wwr_windows_and_independent_jitter(hour, initial, start, day):
         assert value.tzinfo == UTC
 
 
-async def test_dispatch_routes_both_collectors_without_future_sources():
+async def test_dispatch_routes_active_collectors_without_future_sources():
     service = SchedulerService(None, Mock(), ZONE, EntitlementService())
     service.collectors = AsyncMock()
     service.collectors.due.return_value = [
         CollectorStateORM(source=source, next_run_at=NOW)
-        for source in ("remoteok", "weworkremotely", "getonboard", "unknown")
+        for source in (
+            "remoteok",
+            "weworkremotely",
+            "getonboard",
+            "himalayas",
+            "unknown",
+        )
     ]
-    assert await service.dispatch_collectors(NOW) == 3
+    assert await service.dispatch_collectors(NOW) == 4
     assert [call.args[0] for call in service.publish.call_args_list] == [
         "jobs.collect_remoteok",
         "jobs.collect_weworkremotely",
         "jobs.collect_getonboard",
+        "jobs.collect_himalayas",
     ]
     assert [call.args[0] for call in service.collectors.ensure.call_args_list] == [
         "remoteok",
         "getonboard",
         "weworkremotely",
+        "himalayas",
     ]
 
 
@@ -259,3 +267,33 @@ async def test_scheduler_recovers_stale_before_checking_reservations():
     service.digests.users.return_value = []
     await service.dispatch_digests(NOW)
     service.digests.recover_stale.assert_awaited_once_with(NOW)
+
+
+@pytest.mark.parametrize(
+    "hour,initial,start,day",
+    [
+        (5, True, 6, 27),
+        (6, True, 6, 27),
+        (6, False, 14, 27),
+        (15, False, 22, 27),
+        (23, False, 6, 28),
+    ],
+)
+def test_himalayas_three_one_hour_windows_and_independent_jitter(
+    hour, initial, start, day
+):
+    now = datetime(2026, 9, 27, hour, tzinfo=ZoneInfo(ZONE))
+    values = [
+        next_collection(
+            now,
+            COLLECTOR_POLICIES["himalayas"],
+            ZONE,
+            initial=initial,
+            rng=random.Random(seed),
+        )
+        for seed in range(10)
+    ]
+    assert len(set(values)) > 1
+    for value in values:
+        local = value.astimezone(ZoneInfo(ZONE))
+        assert local.day == day and start <= local.hour < start + 1

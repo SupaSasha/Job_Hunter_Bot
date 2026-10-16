@@ -40,7 +40,12 @@ async def test_empty_stats_and_consistent_period_boundaries(repository, period, 
     assert stats.since == NOW - timedelta(days=days)
     assert stats.until == NOW
     assert stats.users.total_users == 0
-    assert len(stats.collectors) == 3
+    assert {row.source for row in stats.collectors} == {
+        "remoteok",
+        "weworkremotely",
+        "getonboard",
+        "himalayas",
+    }
     assert all(
         getattr(stats, name) is None
         for name in [

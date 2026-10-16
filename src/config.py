@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     DIGEST_JOB_MAX_AGE_DAYS: int = Field(default=7, ge=1)
     DIGEST_CANDIDATE_LIMIT: int = Field(default=1000, ge=1)
     DIGEST_PENDING_TIMEOUT_MINUTES: int = Field(default=30, ge=11)
+    HIMALAYAS_MAX_PAGES: int = Field(default=3, ge=1, le=5)
+    HIMALAYAS_API_KEY: str | None = Field(default=None, repr=False)
     TRIAL_DAYS: int = Field(default=7, ge=1)
     FREE_DIGEST_TIME: time = time(9)
     FREE_MIN_SCORE: int = Field(default=70, ge=0, le=100)
@@ -53,7 +55,9 @@ class Settings(BaseSettings):
     MIN_NOTIFICATION_SCORE: int = Field(default=70, ge=0, le=100)
     MAX_NOTIFICATIONS_PER_RUN: int = Field(default=5, ge=0)
 
-    @field_validator("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", mode="before")
+    @field_validator(
+        "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "HIMALAYAS_API_KEY", mode="before"
+    )
     @classmethod
     def empty_telegram_setting(cls, value: object) -> object:
         if isinstance(value, str):

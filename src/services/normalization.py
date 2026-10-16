@@ -165,6 +165,16 @@ class NormalizationService:
         if not matches:
             return None, None
 
+        if text.startswith("UTC offsets: ["):
+            labels = text.removeprefix("UTC offsets: [").removesuffix("]").split(", ")
+            if len(labels) != len(matches) or any(
+                not re.fullmatch(
+                    r"(?:UTC|GMT)\s*[+-]\s*\d{1,2}(?::\d{2})?", label, re.IGNORECASE
+                )
+                for label in labels
+            ):
+                return None, None
+
         offsets: list[int] = []
         for sign, hours_str, minutes_str in matches:
             if minutes_str not in (None, "", "00", "0"):
@@ -179,6 +189,10 @@ class NormalizationService:
         if len(offsets) == 1:
             return offsets[0], offsets[0]
         if len(offsets) >= 2:
+            if text.startswith("UTC offsets: ["):
+                if len(set(offsets)) != max(offsets) - min(offsets) + 1:
+                    # A discrete set with gaps cannot fit an integer interval.
+                    return None, None
             return min(offsets), max(offsets)
         return None, None
 

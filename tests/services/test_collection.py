@@ -175,25 +175,26 @@ async def test_invalid_source_never_acquires_lock(setup):
     redis.lock.assert_not_called()
 
 
-async def test_getonboard_uses_own_state_and_existing_pipeline(setup, monkeypatch):
+@pytest.mark.parametrize("source", ["getonboard", "himalayas"])
+async def test_new_sources_use_own_state_and_existing_pipeline(
+    setup, monkeypatch, source
+):
     from zoneinfo import ZoneInfo
 
     from src.collectors.registry import COLLECTORS
 
     service, redis, collector, now = setup
-    monkeypatch.setitem(COLLECTORS, "getonboard", lambda: collector)
-    assert await service.collect("getonboard") == dict(
+    monkeypatch.setitem(COLLECTORS, source, lambda: collector)
+    assert await service.collect(source) == dict(
         received=0, new=0, duplicates=0, failed=0, cross_source_duplicates=0
     )
-    service.states.ensure.assert_awaited_once_with(
-        "getonboard", now, "America/Montevideo"
-    )
-    assert service.states.update.call_args.args == ("getonboard",)
-    assert redis.lock.call_args.args == ("collector:getonboard:lock",)
+    service.states.ensure.assert_awaited_once_with(source, now, "America/Montevideo")
+    assert service.states.update.call_args.args == (source,)
+    assert redis.lock.call_args.args == (f"collector:{source}:lock",)
     local = service.states.update.call_args.kwargs["next_run_at"].astimezone(
         ZoneInfo("America/Montevideo")
     )
-    assert 6 <= local.hour < 8
+    assert 6 <= local.hour < (8 if source == "getonboard" else 7)
 
 
 @pytest.mark.parametrize("outcome", ["success", "failed", "locked", "stale"])

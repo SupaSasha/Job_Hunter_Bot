@@ -179,7 +179,12 @@ async def test_repository_flushes_without_commit(pg):
     a, _ = await seed(pg)
     async with pg() as session:
         row = await UserFilterRepository(session).add(UserFilterORM(user_id=a))
-        assert row.id and row.sources == ["remoteok", "weworkremotely", "getonboard"]
+        assert row.id and set(row.sources) == {
+            "remoteok",
+            "weworkremotely",
+            "getonboard",
+            "himalayas",
+        }
         await session.rollback()
     async with pg() as session:
         assert await UserFilterRepository(session).get_by_user_id(a) is None
@@ -230,6 +235,7 @@ async def test_failed_update_rolls_back_and_reset_preserves_notification_and_pla
         assert (await service.get_filters(a)).required_technologies == []
         await service.toggle(a, "sources", "remoteok")
         await service.toggle(a, "sources", "getonboard")
+        await service.toggle(a, "sources", "himalayas")
         with pytest.raises(ValueError):
             await service.toggle(a, "sources", "weworkremotely")
         assert (await service.get_filters(a)).sources == ["weworkremotely"]
