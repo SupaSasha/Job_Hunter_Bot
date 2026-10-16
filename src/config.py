@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     DIGEST_PENDING_TIMEOUT_MINUTES: int = Field(default=30, ge=11)
     HIMALAYAS_MAX_PAGES: int = Field(default=3, ge=1, le=5)
     HIMALAYAS_API_KEY: str | None = Field(default=None, repr=False)
+    JOBICY_MAX_PAGES: int = Field(default=2, ge=1, le=5)
     TRIAL_DAYS: int = Field(default=7, ge=1)
     FREE_DIGEST_TIME: time = time(9)
     FREE_MIN_SCORE: int = Field(default=70, ge=0, le=100)

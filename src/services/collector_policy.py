@@ -11,6 +11,7 @@ class CollectorPolicy:
     windows: tuple[tuple[time, time], ...]
     retry_delay: timedelta = timedelta(hours=1)
     display_name: str = ""
+    min_interval: timedelta = timedelta(0)
 
 
 COLLECTOR_POLICIES = {
@@ -37,6 +38,13 @@ COLLECTOR_POLICIES = {
         "jobs.collect_himalayas",
         ((time(6), time(7)), (time(14), time(15)), (time(22), time(23))),
         display_name="Himalayas",
+    ),
+    "jobicy": CollectorPolicy(
+        "jobicy",
+        "jobs.collect_jobicy",
+        ((time(3), time(4)), (time(11), time(12)), (time(19), time(20))),
+        display_name="Jobicy",
+        min_interval=timedelta(hours=1),
     ),
 }
 

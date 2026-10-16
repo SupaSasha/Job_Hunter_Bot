@@ -154,6 +154,7 @@ async def test_cannot_disable_last_source(service):
     await service.toggle(7, "sources", "remoteok")
     await service.toggle(7, "sources", "getonboard")
     await service.toggle(7, "sources", "himalayas")
+    await service.toggle(7, "sources", "jobicy")
     with pytest.raises(ValueError, match="At least one source must be enabled"):
         await service.toggle(7, "sources", "weworkremotely")
     assert (await service.get_filters(7)).sources == ["weworkremotely"]

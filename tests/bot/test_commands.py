@@ -383,7 +383,8 @@ async def test_status_lists_each_persisted_source_and_missing_registered_state(h
 
 
 @pytest.mark.parametrize(
-    "source,name", [("getonboard", "Get on Board"), ("himalayas", "Himalayas")]
+    "source,name",
+    [("getonboard", "Get on Board"), ("himalayas", "Himalayas"), ("jobicy", "Jobicy")],
 )
 async def test_source_status_and_never_run_placeholder(handler, source, name):
     await handler.handle(message("/status"))
@@ -401,7 +402,7 @@ async def test_source_status_and_never_run_placeholder(handler, source, name):
     assert "Remote OK" in reply(handler) and "We Work Remotely" in reply(handler)
 
 
-async def test_owner_collect_dispatches_all_four_real_registered_tasks(handler):
+async def test_owner_collect_dispatches_all_five_real_registered_tasks(handler):
     from contextlib import ExitStack
     from unittest.mock import Mock, patch
 
@@ -413,6 +414,7 @@ async def test_owner_collect_dispatches_all_four_real_registered_tasks(handler):
         "weworkremotely",
         "getonboard",
         "himalayas",
+        "jobicy",
     }
     with ExitStack() as stack:
         publishers = [

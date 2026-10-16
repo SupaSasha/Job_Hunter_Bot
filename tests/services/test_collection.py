@@ -260,3 +260,57 @@ async def test_state_failure_still_finalizes_telemetry(setup):
     with pytest.raises(RuntimeError):
         await service.collect("remoteok")
     assert service.runs.finish.call_args.kwargs["status"] == "failed"
+
+
+@pytest.mark.parametrize(
+    "minutes,expected", [(0, "cooldown"), (59, "cooldown"), (60, None), (61, None)]
+)
+async def test_jobicy_hourly_policy_covers_manual_requests(
+    setup, monkeypatch, minutes, expected
+):
+    from src.collectors.registry import COLLECTORS
+
+    service, _, collector, now = setup
+    monkeypatch.setitem(COLLECTORS, "jobicy", lambda: collector)
+    service.states.get.return_value = CollectorStateORM(
+        source="jobicy",
+        last_started_at=now - timedelta(minutes=minutes),
+        last_status="success",
+        next_run_at=now + timedelta(hours=8),
+    )
+    result = await service.collect("jobicy")
+    if expected:
+        assert result == {"status": "skipped", "reason": expected}
+        collector.collect.assert_not_awaited()
+        service.states.update.assert_not_awaited()
+        assert service.runs.finish.call_args.kwargs["status"] == "skipped"
+    else:
+        collector.collect.assert_awaited_once()
+        assert result["received"] == 0
+
+
+async def test_jobicy_manual_request_respects_retry_after_beyond_hour(
+    setup, monkeypatch
+):
+    from src.collectors.registry import COLLECTORS
+
+    service, _, collector, now = setup
+    monkeypatch.setitem(COLLECTORS, "jobicy", lambda: collector)
+    service.states.get.return_value = CollectorStateORM(
+        source="jobicy",
+        last_started_at=now - timedelta(hours=2),
+        last_status="failed",
+        next_run_at=now + timedelta(hours=1),
+    )
+    assert await service.collect("jobicy") == {
+        "status": "skipped",
+        "reason": "retry_later",
+    }
+    collector.collect.assert_not_awaited()
+
+
+async def test_existing_source_manual_collection_has_no_new_hourly_limit(setup):
+    service, _, collector, now = setup
+    service.states.get.return_value.last_started_at = now
+    assert (await service.collect("remoteok"))["received"] == 0
+    collector.collect.assert_awaited_once()

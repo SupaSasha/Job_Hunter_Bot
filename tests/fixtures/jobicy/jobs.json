@@ -1,0 +1,81 @@
+{
+  "note": "Live public API shape observed 2026-10-16. Descriptions are authored fixture text. No structured skills or timezone fields exist in this response.",
+  "jobs": [
+    {
+      "id": 147750,
+      "url": "https://jobicy.com/jobs/147750-security-software-engineer-iam",
+      "jobSlug": "147750-security-software-engineer-iam",
+      "jobTitle": "Security Software Engineer, IAM",
+      "companyName": "Vercel",
+      "jobIndustry": [
+        "Cybersecurity"
+      ],
+      "jobType": [
+        "Full-Time"
+      ],
+      "jobGeo": "USA",
+      "jobLevel": "Senior",
+      "pubDate": "2026-10-16T03:50:03+00:00",
+      "salaryMin": 208000,
+      "salaryMax": 312000,
+      "salaryCurrency": "USD",
+      "salaryPeriod": "yearly",
+      "jobDescription": "<p>Work with the <b>remote</b> team.</p>"
+    },
+    {
+      "id": 153321,
+      "url": "https://jobicy.com/jobs/153321-postgres-engineer",
+      "jobSlug": "153321-postgres-engineer",
+      "jobTitle": "Postgres Engineer",
+      "companyName": "Supabase",
+      "jobIndustry": [
+        "Software Engineering"
+      ],
+      "jobType": [
+        "Full-Time"
+      ],
+      "jobGeo": "Anywhere",
+      "jobLevel": "Senior",
+      "pubDate": "2026-10-16T03:20:05+00:00",
+      "jobDescription": "<p>Work with the <b>remote</b> team.</p>"
+    },
+    {
+      "id": 150767,
+      "url": "https://jobicy.com/jobs/150767-ai-technical-mentor-independent-contractor-us-canada-europe-mena-india-apac-timezones",
+      "jobSlug": "150767-ai-technical-mentor-independent-contractor-us-canada-europe-mena-india-apac-timezones",
+      "jobTitle": "AI Technical Mentor - Independent Contractor (US Canada, Europe, MENA, APAC)",
+      "companyName": "Udacity",
+      "jobIndustry": [
+        "Education & E-learning"
+      ],
+      "jobType": [
+        "Contract"
+      ],
+      "jobGeo": "APAC,  EMEA,  Canada,  Europe,  USA",
+      "jobLevel": "Senior",
+      "pubDate": "2026-10-16T02:50:24+00:00",
+      "jobDescription": "<p>Work with the <b>remote</b> team.</p>"
+    },
+    {
+      "id": 150786,
+      "url": "https://jobicy.com/jobs/150786-math-content-teacher-mandarin-speaking-required",
+      "jobSlug": "150786-math-content-teacher-mandarin-speaking-required",
+      "jobTitle": "Math Content Teacher - Mandarin Speaking Required",
+      "companyName": "Think Academy US",
+      "jobIndustry": [
+        "Content & Editorial"
+      ],
+      "jobType": [
+        "Part-Time"
+      ],
+      "jobGeo": "Canada",
+      "jobLevel": "Any",
+      "pubDate": "2026-10-16T02:45:25+00:00",
+      "salaryMin": 45,
+      "salaryMax": 45,
+      "salaryCurrency": "USD",
+      "salaryPeriod": "hourly",
+      "jobDescription": "<p>Work with the <b>remote</b> team.</p>"
+    }
+  ]
+}

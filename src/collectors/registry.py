@@ -1,5 +1,6 @@
 from src.collectors.getonboard import GetOnBoardCollector
 from src.collectors.himalayas import HimalayasCollector
+from src.collectors.jobicy import JobicyCollector
 from src.collectors.remoteok import RemoteOKCollector
 from src.collectors.weworkremotely import WeWorkRemotelyCollector
 
@@ -8,4 +9,5 @@ COLLECTORS = {
     "getonboard": GetOnBoardCollector,
     "weworkremotely": WeWorkRemotelyCollector,
     "himalayas": HimalayasCollector,
+    "jobicy": JobicyCollector,
 }

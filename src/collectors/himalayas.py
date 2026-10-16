@@ -1,6 +1,5 @@
 """Himalayas' official, bounded remote-jobs JSON feed."""
 
-import asyncio
 import logging
 import math
 from datetime import UTC, datetime
@@ -10,7 +9,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from src.collectors.base import BaseJobCollector, CollectionError
-from src.collectors.http import fetch_json
+from src.collectors.pagination import collect_cursor_pages
 from src.collectors.skills import technical_categories
 from src.collectors.text import html_to_text
 from src.schemas.job import JobDTO
@@ -183,39 +182,17 @@ class HimalayasCollector(BaseJobCollector):
         return headers
 
     async def collect(self) -> list[JobDTO]:
-        jobs, seen_ids, seen_cursors = [], set(), set()
-        cursor = None
         async with httpx.AsyncClient(
             timeout=self.timeout, headers=self.request_headers, follow_redirects=False
         ) as client:
-            for page in range(self.max_pages):
-                params = {"limit": "20"}
-                if cursor is not None:
-                    params["cursor"] = cursor
-                payload = await fetch_json(
-                    client,
-                    self.api_url,
-                    source="Himalayas",
-                    params=params,
-                    max_response_bytes=self.max_response_bytes,
-                )
-                batch, next_cursor = parse_page(payload)
-                added = 0
-                for job in batch:
-                    if job.external_id not in seen_ids:
-                        seen_ids.add(job.external_id)
-                        jobs.append(job)
-                        added += 1
-                if (
-                    not batch
-                    or not added
-                    or next_cursor is None
-                    or next_cursor in seen_cursors
-                ):
-                    break
-                seen_cursors.add(next_cursor)
-                cursor = next_cursor
-                if page + 1 < self.max_pages:
-                    await asyncio.sleep(1)
+            jobs = await collect_cursor_pages(
+                client,
+                self.api_url,
+                source="Himalayas",
+                params={"limit": "20"},
+                parser=parse_page,
+                max_pages=self.max_pages,
+                max_response_bytes=self.max_response_bytes,
+            )
         logger.info("Himalayas collected %s jobs", len(jobs))
         return jobs

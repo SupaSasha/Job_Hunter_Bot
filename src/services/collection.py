@@ -94,6 +94,17 @@ class CollectionService:
                 or state.next_run_at > now
             ):
                 return {"status": "skipped", "reason": "stale_schedule"}
+            if policy.min_interval:
+                if (
+                    state.last_started_at is not None
+                    and now < state.last_started_at + policy.min_interval
+                ):
+                    return {"status": "skipped", "reason": "cooldown"}
+                if (
+                    state.last_status in {"failed", "partial"}
+                    and state.next_run_at > now
+                ):
+                    return {"status": "skipped", "reason": "retry_later"}
             await self.states.update(
                 source, last_started_at=now, last_status="running", last_error=None
             )

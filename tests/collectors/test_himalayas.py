@@ -246,7 +246,7 @@ async def test_bounded_cursor_pagination_without_query_filters(
     async def sleep(_):
         pass
 
-    monkeypatch.setattr("src.collectors.himalayas.asyncio.sleep", sleep)
+    monkeypatch.setattr("src.collectors.pagination.asyncio.sleep", sleep)
 
     def respond(request):
         calls.append(request)
@@ -274,7 +274,7 @@ async def test_pagination_stops_safely(raw, transport, monkeypatch, mode):
     async def sleep(_):
         pass
 
-    monkeypatch.setattr("src.collectors.himalayas.asyncio.sleep", sleep)
+    monkeypatch.setattr("src.collectors.pagination.asyncio.sleep", sleep)
 
     def respond(request):
         calls.append(request)
