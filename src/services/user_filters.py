@@ -7,7 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.config import settings
 from src.i18n import LocalizedValidationError
 from src.models.user import UserORM
-from src.models.user_filter import DEFAULT_REGIONS, DEFAULT_SOURCES, UserFilterORM
+from src.models.user_filter import (
+    AVAILABLE_SOURCES,
+    DEFAULT_REGIONS,
+    DEFAULT_SOURCES,
+    UserFilterORM,
+)
 from src.repositories.notification_settings import NotificationSettingsRepository
 from src.repositories.user_filters import UserFilterRepository
 from src.schemas.filters import UserFilterDTO
@@ -38,7 +43,7 @@ TOGGLE_LISTS = {
     "allowed_regions": REGIONS,
     "employment_types": EMPLOYMENT_TYPES,
     "experience_levels": EXPERIENCE_LEVELS,
-    "sources": DEFAULT_SOURCES,
+    "sources": AVAILABLE_SOURCES,
 }
 LIST_FIELDS = (*sorted(TEXT_LISTS), *TOGGLE_LISTS)
 

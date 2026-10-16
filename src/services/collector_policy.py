@@ -12,6 +12,7 @@ class CollectorPolicy:
     retry_delay: timedelta = timedelta(hours=1)
     display_name: str = ""
     min_interval: timedelta = timedelta(0)
+    default_enabled: bool = True
 
 
 COLLECTOR_POLICIES = {
@@ -63,6 +64,13 @@ COLLECTOR_POLICIES = {
         "jobs.collect_jooble",
         ((time(9), time(10)), (time(21), time(22))),
         display_name="Jooble",
+    ),
+    "usajobs": CollectorPolicy(
+        "usajobs",
+        "jobs.collect_usajobs",
+        ((time(15), time(16)),),
+        display_name="USAJOBS",
+        default_enabled=False,
     ),
 }
 

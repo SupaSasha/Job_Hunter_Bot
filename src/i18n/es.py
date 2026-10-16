@@ -270,6 +270,7 @@ ES = {
     "label.Premium": "Premium",
     "status.success": "éxito",
     "status.failed": "falló",
+    "status.configuration_required": "requiere configuración",
     "status.skipped": "omitido",
     "status.running": "en curso",
     "status.scheduled": "programado",

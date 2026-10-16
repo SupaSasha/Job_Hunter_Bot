@@ -13,7 +13,7 @@ from src.i18n import (
     user_language,
     validation_message,
 )
-from src.models.user_filter import DEFAULT_SOURCES
+from src.models.user_filter import AVAILABLE_SOURCES
 from src.repositories.users import UserRepository
 from src.schemas.filters import UserFilterDTO
 from src.services.collector_policy import COLLECTOR_POLICIES, source_display_name
@@ -43,7 +43,7 @@ TOGGLE_EDITORS = {
     "sources": (
         "sources",
         "label.sources",
-        DEFAULT_SOURCES,
+        AVAILABLE_SOURCES,
     ),
 }
 ROOT_ITEMS = tuple(

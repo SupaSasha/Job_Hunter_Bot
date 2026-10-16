@@ -5,6 +5,7 @@ from src.collectors.jobicy import JobicyCollector
 from src.collectors.jooble import JoobleCollector
 from src.collectors.remoteok import RemoteOKCollector
 from src.collectors.the_muse import TheMuseCollector
+from src.collectors.usajobs import USAJobsCollector
 from src.collectors.weworkremotely import WeWorkRemotelyCollector
 
 COLLECTORS = {
@@ -16,4 +17,5 @@ COLLECTORS = {
     "the_muse": TheMuseCollector,
     "hacker_news": HackerNewsCollector,
     "jooble": JoobleCollector,
+    "usajobs": USAJobsCollector,
 }

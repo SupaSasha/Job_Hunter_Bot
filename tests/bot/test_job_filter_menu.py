@@ -7,6 +7,7 @@ from src.bot.client import TelegramAPIError, TelegramClient
 from src.bot.filters import LIST_EDITORS, ROOT_ITEMS, FiltersHandler, render_screen
 from src.bot.pending_input import PendingInput, PendingInputStore
 from src.bot.updates import route_update
+from src.i18n import Language
 from src.models.user import UserORM
 from src.models.user_filter import UserFilterORM
 from src.repositories.users import UserRepository
@@ -16,6 +17,17 @@ from src.services.user_filters import (
     filter_defaults,
     filters_to_dto,
 )
+
+
+@pytest.mark.parametrize("language", [Language.EN, Language.ES])
+def test_usajobs_available_but_unselected_in_sources_menu(language):
+    filters = filters_to_dto(UserFilterORM(user_id=7, **filter_defaults()), "UTC")
+    _, markup = render_screen(filters, "sources", language)
+    rows = [row[0] for row in markup["inline_keyboard"]]
+    assert {"text": "❌ USAJOBS", "callback_data": "filters:sources:usajobs"} in rows
+    filters.sources.append("usajobs")
+    _, markup = render_screen(filters, "sources", language)
+    assert markup["inline_keyboard"][-2][0]["text"] == "✅ USAJOBS"
 
 
 def message(text="python", sender_id=123, chat_type="private"):

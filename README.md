@@ -11,6 +11,8 @@ hiring?** and **Jooble**. It filters jobs by your preferences and sends daily di
 Built with Python, FastAPI, PostgreSQL, Redis and Celery.
 
 Jooble needs a country-specific API key and explicit [market configuration](docs/project-guide.md#jooble).
+Optional [USAJOBS](docs/project-guide.md#usajobs) adds U.S. federal technology
+jobs; it needs API credentials and is off in user filters by default.
 
 ## Local setup
 

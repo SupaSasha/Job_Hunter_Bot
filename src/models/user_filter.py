@@ -7,7 +7,10 @@ from src.models.timestamps import Timestamps
 from src.services.collector_policy import COLLECTOR_POLICIES
 
 DEFAULT_REGIONS = ("worldwide", "latam", "south_america", "uruguay")
-DEFAULT_SOURCES = tuple(COLLECTOR_POLICIES)
+AVAILABLE_SOURCES = tuple(COLLECTOR_POLICIES)
+DEFAULT_SOURCES = tuple(
+    source for source, policy in COLLECTOR_POLICIES.items() if policy.default_enabled
+)
 
 
 def list_column(values: tuple[str, ...] = ()):

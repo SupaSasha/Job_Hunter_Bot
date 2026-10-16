@@ -391,6 +391,7 @@ async def test_status_lists_each_persisted_source_and_missing_registered_state(h
         ("the_muse", "The Muse"),
         ("hacker_news", "Hacker News"),
         ("jooble", "Jooble"),
+        ("usajobs", "USAJOBS"),
     ],
 )
 async def test_source_status_and_never_run_placeholder(handler, source, name):
@@ -409,7 +410,7 @@ async def test_source_status_and_never_run_placeholder(handler, source, name):
     assert "Remote OK" in reply(handler) and "We Work Remotely" in reply(handler)
 
 
-async def test_owner_collect_dispatches_all_eight_real_registered_tasks(handler):
+async def test_owner_collect_dispatches_all_nine_real_registered_tasks(handler):
     from contextlib import ExitStack
     from unittest.mock import Mock, patch
 
@@ -425,6 +426,7 @@ async def test_owner_collect_dispatches_all_eight_real_registered_tasks(handler)
         "the_muse",
         "hacker_news",
         "jooble",
+        "usajobs",
     }
     with ExitStack() as stack:
         publishers = [
@@ -436,6 +438,26 @@ async def test_owner_collect_dispatches_all_eight_real_registered_tasks(handler)
         for publisher in publishers:
             publisher.assert_called_once_with()
     assert reply(handler) == "Collection started."
+
+
+@pytest.mark.parametrize(
+    "language,expected",
+    [(Language.EN, "configuration required"), (Language.ES, "requiere configuración")],
+)
+async def test_status_configuration_error_has_safe_explanation(
+    handler, language, expected
+):
+    handler.users.get_by_telegram_id.return_value.language = language
+    handler.queries.collector_states.return_value.append(
+        CollectorStateORM(
+            source="usajobs",
+            last_status="failed",
+            last_error="CollectorConfigurationError",
+            next_run_at=NOW + timedelta(hours=1),
+        )
+    )
+    await handler.handle(message("/status"))
+    assert "USAJOBS" in reply(handler) and expected in reply(handler)
 
 
 @pytest.mark.parametrize(

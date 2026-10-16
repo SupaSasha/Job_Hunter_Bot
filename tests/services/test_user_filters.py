@@ -52,6 +52,17 @@ async def test_new_user_defaults_and_commit(service):
     service.session.commit.assert_awaited_once()
 
 
+async def test_usajobs_opt_in_preserves_preferences_and_reset_disables_it(service):
+    before = await service.get_filters(7)
+    assert "usajobs" not in before.sources
+    enabled = await service.toggle(7, "sources", "usajobs")
+    assert enabled.sources == [*before.sources, "usajobs"]
+    assert enabled.exclude_us_only == before.exclude_us_only
+    assert enabled.allowed_regions == before.allowed_regions
+    assert (await service.get_filters(7)).sources == enabled.sources
+    assert "usajobs" not in (await service.reset(7)).sources
+
+
 async def test_owner_bootstrap_preserves_legacy_only_when_missing(service):
     service.owner_telegram_id = 123
     service.repository.get_by_user_id.return_value = None

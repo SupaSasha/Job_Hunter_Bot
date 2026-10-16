@@ -251,6 +251,7 @@ EN = {
     "label.Premium": "Premium",
     "status.success": "success",
     "status.failed": "failed",
+    "status.configuration_required": "configuration required",
     "status.skipped": "skipped",
     "status.running": "running",
     "status.scheduled": "scheduled",

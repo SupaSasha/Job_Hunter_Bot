@@ -356,6 +356,56 @@ other preferences or re-enabling disabled older sources. See the
 [implementation and validation report](jooble-stage-report.md) for authentication,
 market requirements, US live collection results and test coverage.
 
+## USAJOBS
+
+USAJOBS is an optional U.S. federal source, disabled in user filters by default.
+Enable it manually through `/filters` → Sources. Existing selections and new-user
+defaults retain the eight previous sources. Reset returns USAJOBS to off.
+Available sources and default selections are separate; no schema/default change
+or Alembic migration is required.
+
+Request a key at the [official portal](https://developer.usajobs.gov/apirequest/),
+then set `USAJOBS_API_KEY` and `USAJOBS_EMAIL` (the email used for registration).
+Search uses `GET https://data.usajobs.gov/api/Search` with Host, User-Agent (email)
+and Authorization-Key headers. Missing credentials fail before HTTP and show
+configuration required in `/status`. Key/email values and bodies are not logged.
+
+The global search uses IT series 2210, RemoteIndicator=True, DatePosted=30,
+newest opening dates first and Fields=Full. Defaults fetch at most two pages of
+50 results and return at most 100 unique control numbers per run. Configure
+`USAJOBS_MAX_PAGES_PER_QUERY` (1–5) and `USAJOBS_MAX_JOBS_PER_RUN` (1–500).
+Pagination is bounded and stops on short/exhausted/repeated pages. API requests
+are spaced one second apart; 429 honors shared Retry-After handling.
+
+Telework eligibility alone never means fully remote. An explicit remote flag or
+the official location label Anywhere in the U.S. (remote job) confirms remote;
+that location label also establishes a U.S. restriction. Exact unconditional
+citizenship requirements can set us_only. Agency location, public hiring paths
+and security clearances do not automatically establish eligibility. Other
+requirements remain in the bounded description. Existing exclusion/region
+filters still apply if a user opts in. No source scoring or digest rule is added.
+
+Salary retains structured USD amounts and PA/PH periods without conversion.
+Unknown periods stay unknown; fractional amounts cannot fit the existing integer
+DTO and are not rounded. Schedule codes 1/2 map to full_time/part_time. Federal
+grades, appointment tenure and multiple schedules do not invent seniority or
+contract employment. Structured technologies/timezone restrictions stay unknown.
+Offset-aware publication dates become UTC; undocumented naive publication
+timestamps remain unknown. Calendar closing dates expire after the full closing
+day in America/New_York, including DST; aware closing instants retain their offset.
+
+The shared scheduler selects one run in 15:00–16:00 America/Montevideo each day.
+Task `jobs.collect_usajobs` uses `collector:usajobs:lock`, CollectionService,
+normalization, PostgreSQL dedup and existing run/state statistics. Owner `/collect`
+dispatches it with the other eight collectors. Manual collection:
+
+```bash
+poetry run python -m src.scripts.collect_usajobs
+```
+
+See the [implementation and validation report](usajobs-stage-report.md) for
+source contracts, limitations, fixtures, live-run availability and checks.
+
 ## Daily delivery
 
 Beat tasks:

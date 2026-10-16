@@ -224,10 +224,11 @@ async def test_dispatch_routes_active_collectors_without_future_sources():
             "the_muse",
             "hacker_news",
             "jooble",
+            "usajobs",
             "unknown",
         )
     ]
-    assert await service.dispatch_collectors(NOW) == 8
+    assert await service.dispatch_collectors(NOW) == 9
     assert [call.args[0] for call in service.publish.call_args_list] == [
         "jobs.collect_remoteok",
         "jobs.collect_weworkremotely",
@@ -237,6 +238,7 @@ async def test_dispatch_routes_active_collectors_without_future_sources():
         "jobs.collect_the_muse",
         "jobs.collect_hacker_news",
         "jobs.collect_jooble",
+        "jobs.collect_usajobs",
     ]
     assert [call.args[0] for call in service.collectors.ensure.call_args_list] == [
         "remoteok",
@@ -247,6 +249,7 @@ async def test_dispatch_routes_active_collectors_without_future_sources():
         "the_muse",
         "hacker_news",
         "jooble",
+        "usajobs",
     ]
 
 
@@ -403,3 +406,21 @@ def test_jooble_twice_daily_windows(hour, initial, start, day):
     for value in values:
         local = value.astimezone(ZoneInfo(ZONE))
         assert local.day == day and start <= local.hour < start + 1
+
+
+@pytest.mark.parametrize(
+    "hour,initial,day",
+    [(14, False, 27), (15, True, 27), (15, False, 28), (16, True, 28)],
+)
+def test_usajobs_daily_window_and_jitter(hour, initial, day):
+    policy = COLLECTOR_POLICIES["usajobs"]
+    assert not policy.default_enabled and len(policy.windows) == 1
+    now = datetime(2026, 9, 27, hour, tzinfo=ZoneInfo(ZONE))
+    values = [
+        next_collection(now, policy, ZONE, initial=initial, rng=random.Random(seed))
+        for seed in range(10)
+    ]
+    assert len(set(values)) > 1
+    for value in values:
+        local = value.astimezone(ZoneInfo(ZONE))
+        assert local.day == day and 15 <= local.hour < 16

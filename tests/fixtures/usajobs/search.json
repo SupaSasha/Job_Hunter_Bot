@@ -1,0 +1,243 @@
+{
+  "LanguageCode": "EN",
+  "SearchParameters": {},
+  "SearchResult": {
+    "SearchResultCount": 5,
+    "SearchResultCountAll": 5,
+    "SearchResultItems": [
+      {
+        "MatchedObjectId": "800000001",
+        "MatchedObjectDescriptor": {
+          "PositionID": "AGENCY-2026-IT-001",
+          "PositionTitle": "Information Technology Specialist",
+          "PositionURI": "https://www.usajobs.gov/job/800000001",
+          "OrganizationName": "Example Federal Agency",
+          "DepartmentName": "Example Department",
+          "PositionLocationDisplay": "Anywhere in the U.S. (remote job)",
+          "PositionLocation": [
+            {
+              "LocationName": "Anywhere in the U.S. (remote job)",
+              "CountryCode": "United States"
+            }
+          ],
+          "PositionSchedule": [
+            {
+              "Name": "Full-time",
+              "Code": "1"
+            }
+          ],
+          "PositionOfferingType": [
+            {
+              "Name": "Permanent",
+              "Code": "15317"
+            }
+          ],
+          "PositionRemuneration": [
+            {
+              "MinimumRange": "80000.0",
+              "MaximumRange": "120000.0",
+              "RateIntervalCode": "PA"
+            }
+          ],
+          "PublicationStartDate": "2026-10-15T08:00:00-04:00",
+          "ApplicationCloseDate": "2030-12-31",
+          "QualificationSummary": "GS-12 qualifications; federal grade is not conventional seniority.",
+          "UserArea": {
+            "Details": {
+              "JobSummary": "<p>Build reliable public services &amp; tools.</p>",
+              "RemoteIndicator": true,
+              "TeleworkEligible": false,
+              "WhoMayApply": {
+                "Name": "U.S. citizens only",
+                "Code": "15514"
+              },
+              "KeyRequirements": [
+                "You must be a U.S. citizen to apply for this job."
+              ],
+              "LowGrade": "12",
+              "HighGrade": "13",
+              "HiringPath": [
+                "public"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "MatchedObjectId": "800000002",
+        "MatchedObjectDescriptor": {
+          "PositionID": "AGENCY-2026-IT-001",
+          "PositionTitle": "On-site IT Specialist",
+          "PositionURI": "https://www.usajobs.gov/job/800000002",
+          "OrganizationName": "Example Federal Agency",
+          "DepartmentName": "Example Department",
+          "PositionLocationDisplay": "Multiple locations",
+          "PositionLocation": [
+            {
+              "LocationName": "Washington, DC"
+            },
+            {
+              "LocationName": "New York, NY"
+            }
+          ],
+          "PositionSchedule": [
+            {
+              "Name": "Part-time",
+              "Code": "2"
+            }
+          ],
+          "PositionOfferingType": [
+            {
+              "Name": "Permanent",
+              "Code": "15317"
+            }
+          ],
+          "PositionRemuneration": [
+            {
+              "MinimumRange": "40",
+              "MaximumRange": "60",
+              "RateIntervalCode": "PH"
+            }
+          ],
+          "PublicationStartDate": "2026-10-15T08:00:00-04:00",
+          "ApplicationCloseDate": "2030-12-31",
+          "QualificationSummary": "GS-12 qualifications; federal grade is not conventional seniority.",
+          "UserArea": {
+            "Details": {
+              "JobSummary": "<p>Build reliable public services &amp; tools.</p>",
+              "RemoteIndicator": false,
+              "TeleworkEligible": false,
+              "WhoMayApply": {},
+              "KeyRequirements": [],
+              "LowGrade": "12",
+              "HighGrade": "13",
+              "HiringPath": [
+                "public"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "MatchedObjectId": "800000003",
+        "MatchedObjectDescriptor": {
+          "PositionID": "AGENCY-2026-IT-001",
+          "PositionTitle": "Telework-eligible IT Specialist",
+          "PositionURI": "https://www.usajobs.gov/job/800000003",
+          "OrganizationName": "Example Federal Agency",
+          "DepartmentName": "Example Department",
+          "PositionLocationDisplay": "Multiple locations",
+          "PositionLocation": [
+            {
+              "LocationName": "Washington, DC"
+            },
+            {
+              "LocationName": "New York, NY"
+            }
+          ],
+          "PositionSchedule": [
+            {
+              "Name": "Multiple Schedules",
+              "Code": "6"
+            }
+          ],
+          "PositionOfferingType": [
+            {
+              "Name": "Permanent",
+              "Code": "15317"
+            }
+          ],
+          "PositionRemuneration": [
+            {
+              "MinimumRange": "80000.0",
+              "MaximumRange": "120000.0",
+              "RateIntervalCode": "PA"
+            }
+          ],
+          "PublicationStartDate": "2026-10-15T08:00:00-04:00",
+          "ApplicationCloseDate": "2030-12-31",
+          "QualificationSummary": "GS-12 qualifications; federal grade is not conventional seniority.",
+          "UserArea": {
+            "Details": {
+              "JobSummary": "<p>Build reliable public services &amp; tools.</p>",
+              "RemoteIndicator": false,
+              "TeleworkEligible": true,
+              "WhoMayApply": {},
+              "KeyRequirements": [],
+              "LowGrade": "12",
+              "HighGrade": "13",
+              "HiringPath": [
+                "public"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "MatchedObjectId": "800000004",
+        "MatchedObjectDescriptor": {
+          "PositionID": "AGENCY-2026-IT-001",
+          "PositionTitle": "Closed IT Specialist",
+          "PositionURI": "https://www.usajobs.gov/job/800000004",
+          "OrganizationName": "Example Federal Agency",
+          "DepartmentName": "Example Department",
+          "PositionLocationDisplay": "Multiple locations",
+          "PositionLocation": [
+            {
+              "LocationName": "Washington, DC"
+            },
+            {
+              "LocationName": "New York, NY"
+            }
+          ],
+          "PositionSchedule": [
+            {
+              "Name": "Full-time",
+              "Code": "1"
+            }
+          ],
+          "PositionOfferingType": [
+            {
+              "Name": "Permanent",
+              "Code": "15317"
+            }
+          ],
+          "PositionRemuneration": [
+            {
+              "MinimumRange": "80000.0",
+              "MaximumRange": "120000.0",
+              "RateIntervalCode": "PA"
+            }
+          ],
+          "PublicationStartDate": "2026-10-15T08:00:00-04:00",
+          "ApplicationCloseDate": "2020-01-01",
+          "QualificationSummary": "GS-12 qualifications; federal grade is not conventional seniority.",
+          "UserArea": {
+            "Details": {
+              "JobSummary": "<p>Build reliable public services &amp; tools.</p>",
+              "RemoteIndicator": false,
+              "TeleworkEligible": false,
+              "WhoMayApply": {},
+              "KeyRequirements": [],
+              "LowGrade": "12",
+              "HighGrade": "13",
+              "HiringPath": [
+                "public"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "MatchedObjectId": "800000005",
+        "MatchedObjectDescriptor": {
+          "PositionTitle": "Minimal IT Specialist",
+          "PositionURI": "https://www.usajobs.gov/job/800000005"
+        }
+      }
+    ],
+    "UserArea": {
+      "NumberOfPages": "1"
+    }
+  }
+}

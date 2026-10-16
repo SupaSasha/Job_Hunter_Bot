@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     JOOBLE_SEARCH_LOCATION: str | None = None
     JOOBLE_MAX_PAGES_PER_QUERY: int = Field(default=1, ge=1, le=3)
     JOOBLE_MAX_JOBS_PER_RUN: int = Field(default=40, ge=1, le=200)
+    USAJOBS_API_KEY: str | None = Field(default=None, repr=False)
+    USAJOBS_EMAIL: str | None = Field(default=None, repr=False)
+    USAJOBS_MAX_PAGES_PER_QUERY: int = Field(default=2, ge=1, le=5)
+    USAJOBS_MAX_JOBS_PER_RUN: int = Field(default=100, ge=1, le=500)
     TRIAL_DAYS: int = Field(default=7, ge=1)
     FREE_DIGEST_TIME: time = time(9)
     FREE_MIN_SCORE: int = Field(default=70, ge=0, le=100)
@@ -72,6 +76,8 @@ class Settings(BaseSettings):
         "JOOBLE_API_KEY",
         "JOOBLE_API_DOMAIN",
         "JOOBLE_SEARCH_LOCATION",
+        "USAJOBS_API_KEY",
+        "USAJOBS_EMAIL",
         mode="before",
     )
     @classmethod

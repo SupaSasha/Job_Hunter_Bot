@@ -156,6 +156,12 @@ class CommandHandler:
             status = (collector.last_status if collector else None) or t(
                 "common.unknown", language
             )
+            if (
+                collector
+                and collector.last_status == "failed"
+                and collector.last_error == "CollectorConfigurationError"
+            ):
+                status = "configuration_required"
             collector_sections.append(
                 t(
                     "status.collector",

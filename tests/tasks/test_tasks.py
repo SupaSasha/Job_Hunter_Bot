@@ -26,6 +26,7 @@ def test_stable_task_registration_and_beat_intervals(app):
         "jobs.collect_the_muse",
         "jobs.collect_hacker_news",
         "jobs.collect_jooble",
+        "jobs.collect_usajobs",
         "notifications.send_daily_digest",
     }.issubset(app.tasks)
     schedule = app.conf.beat_schedule
@@ -48,6 +49,7 @@ def test_stable_task_registration_and_beat_intervals(app):
         ("jobs", "collect_the_muse", ["2026-09-27T00:00:00+00:00"]),
         ("jobs", "collect_hacker_news", ["2026-09-27T00:00:00+00:00"]),
         ("jobs", "collect_jooble", ["2026-09-27T00:00:00+00:00"]),
+        ("jobs", "collect_usajobs", ["2026-09-27T00:00:00+00:00"]),
         ("notifications", "send_daily_digest", [17, "2026-09-27"]),
         ("scheduler", "dispatch_collectors", []),
         ("scheduler", "dispatch_digests", []),
