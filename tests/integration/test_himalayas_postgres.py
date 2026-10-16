@@ -145,8 +145,9 @@ async def test_migration_adds_new_source_without_reenabling_old_disabled_sources
             "getonboard",
             "himalayas",
             "jobicy",
+            "the_muse",
         ]
-        assert rows[1].sources == ["remoteok", "himalayas", "jobicy"]
+        assert rows[1].sources == ["remoteok", "himalayas", "jobicy", "the_muse"]
         assert all(row.min_salary == 2500 for row in rows)
         assert (await session.get(UserORM, ids[0])).language == "es"
         fresh = UserORM(telegram_id=1003)

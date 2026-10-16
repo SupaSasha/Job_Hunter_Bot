@@ -60,10 +60,20 @@ def collect_jobicy(expected_next_run: str | None = None) -> dict:
     return asyncio.run(collect_jobicy_async(expected_next_run))
 
 
+async def collect_the_muse_async(expected_next_run: str | None = None) -> dict:
+    return await collect_source_async("the_muse", expected_next_run)
+
+
+@celery_app.task(name="jobs.collect_the_muse")
+def collect_the_muse(expected_next_run: str | None = None) -> dict:
+    return asyncio.run(collect_the_muse_async(expected_next_run))
+
+
 COLLECTOR_TASKS = {
     "remoteok": collect_remoteok,
     "weworkremotely": collect_weworkremotely,
     "getonboard": collect_getonboard,
     "himalayas": collect_himalayas,
     "jobicy": collect_jobicy,
+    "the_muse": collect_the_muse,
 }

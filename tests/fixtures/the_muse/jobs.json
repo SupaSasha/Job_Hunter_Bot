@@ -1,0 +1,107 @@
+{
+  "note": "Live public API shape verified 2026-10-16. Descriptions are authored. The final record is an authored missing-optionals fixture. Cities do not prove office-only eligibility.",
+  "results": [
+    {
+      "id": 22229841,
+      "name": "Principal Technical Product Manager - Commerce (Billing & Monetization)",
+      "company": {
+        "id": 741,
+        "short_name": "atlassian",
+        "name": "Atlassian"
+      },
+      "refs": {
+        "landing_page": "https://www.themuse.com/jobs/atlassian/principal-technical-product-manager-commerce-billing-monetization"
+      },
+      "locations": [
+        {
+          "name": "Bangalore, India"
+        },
+        {
+          "name": "Flexible / Remote"
+        }
+      ],
+      "levels": [
+        {
+          "name": "Senior Level",
+          "short_name": "senior"
+        }
+      ],
+      "categories": [],
+      "tags": [],
+      "type": "external",
+      "publication_date": "2026-10-03T21:25:38Z",
+      "contents": "<p>Join our <b>team</b> &amp; build useful products.</p>"
+    },
+    {
+      "id": 22230319,
+      "name": "Administrative Associate - Level III - General Management (Assistant)",
+      "company": {
+        "id": 12055,
+        "short_name": "cummins",
+        "name": "Cummins"
+      },
+      "refs": {
+        "landing_page": "https://www.themuse.com/jobs/cummins/administrative-associate-level-iii-general-management-assistant"
+      },
+      "locations": [
+        {
+          "name": "San Luis Potosí, Mexico"
+        }
+      ],
+      "levels": [
+        {
+          "name": "Mid Level",
+          "short_name": "mid"
+        }
+      ],
+      "categories": [],
+      "tags": [],
+      "type": "external",
+      "publication_date": "2026-10-03T21:35:54Z",
+      "contents": "<p>Join our <b>team</b> &amp; build useful products.</p>"
+    },
+    {
+      "id": 20839023,
+      "name": "Back-end Developer - Remote Internship",
+      "company": {
+        "id": 1327,
+        "short_name": "themuse",
+        "name": "The Muse"
+      },
+      "refs": {
+        "landing_page": "https://www.themuse.com/jobs/themuse/backend-developer-remote-internship"
+      },
+      "locations": [
+        {
+          "name": "Flexible / Remote"
+        }
+      ],
+      "levels": [
+        {
+          "name": "Entry Level",
+          "short_name": "entry"
+        },
+        {
+          "name": "Internship",
+          "short_name": "internship"
+        }
+      ],
+      "categories": [
+        {
+          "name": "Software Engineering"
+        }
+      ],
+      "tags": [],
+      "type": "external",
+      "publication_date": "2025-12-05T14:42:34Z",
+      "contents": "<p>Join our <b>team</b> &amp; build useful products.</p>"
+    },
+    {
+      "id": 999000001,
+      "name": "Platform Engineer",
+      "refs": {
+        "landing_page": "https://www.themuse.com/jobs/example/platform-engineer"
+      }
+    }
+  ]
+}

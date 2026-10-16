@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     HIMALAYAS_MAX_PAGES: int = Field(default=3, ge=1, le=5)
     HIMALAYAS_API_KEY: str | None = Field(default=None, repr=False)
     JOBICY_MAX_PAGES: int = Field(default=2, ge=1, le=5)
+    THE_MUSE_MAX_PAGES: int = Field(default=3, ge=1, le=5)
+    THE_MUSE_API_KEY: str | None = Field(default=None, repr=False)
     TRIAL_DAYS: int = Field(default=7, ge=1)
     FREE_DIGEST_TIME: time = time(9)
     FREE_MIN_SCORE: int = Field(default=70, ge=0, le=100)
@@ -57,7 +59,11 @@ class Settings(BaseSettings):
     MAX_NOTIFICATIONS_PER_RUN: int = Field(default=5, ge=0)
 
     @field_validator(
-        "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "HIMALAYAS_API_KEY", mode="before"
+        "TELEGRAM_BOT_TOKEN",
+        "TELEGRAM_CHAT_ID",
+        "HIMALAYAS_API_KEY",
+        "THE_MUSE_API_KEY",
+        mode="before",
     )
     @classmethod
     def empty_telegram_setting(cls, value: object) -> object:

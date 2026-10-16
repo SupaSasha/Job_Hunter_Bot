@@ -221,16 +221,18 @@ async def test_dispatch_routes_active_collectors_without_future_sources():
             "getonboard",
             "himalayas",
             "jobicy",
+            "the_muse",
             "unknown",
         )
     ]
-    assert await service.dispatch_collectors(NOW) == 5
+    assert await service.dispatch_collectors(NOW) == 6
     assert [call.args[0] for call in service.publish.call_args_list] == [
         "jobs.collect_remoteok",
         "jobs.collect_weworkremotely",
         "jobs.collect_getonboard",
         "jobs.collect_himalayas",
         "jobs.collect_jobicy",
+        "jobs.collect_the_muse",
     ]
     assert [call.args[0] for call in service.collectors.ensure.call_args_list] == [
         "remoteok",
@@ -238,6 +240,7 @@ async def test_dispatch_routes_active_collectors_without_future_sources():
         "weworkremotely",
         "himalayas",
         "jobicy",
+        "the_muse",
     ]
 
 
@@ -315,6 +318,30 @@ def test_himalayas_three_one_hour_windows_and_independent_jitter(
 def test_jobicy_windows_respect_daily_frequency(hour, initial, start, day):
     policy = COLLECTOR_POLICIES["jobicy"]
     assert policy.min_interval == timedelta(hours=1)
+    now = datetime(2026, 9, 27, hour, tzinfo=ZoneInfo(ZONE))
+    values = [
+        next_collection(now, policy, ZONE, initial=initial, rng=random.Random(seed))
+        for seed in range(10)
+    ]
+    assert len(set(values)) > 1
+    for value in values:
+        local = value.astimezone(ZoneInfo(ZONE))
+        assert local.day == day and start <= local.hour < start + 1
+
+
+@pytest.mark.parametrize(
+    "hour,initial,start,day",
+    [
+        (6, True, 7, 27),
+        (7, True, 7, 27),
+        (7, False, 19, 27),
+        (19, True, 19, 27),
+        (20, False, 7, 28),
+    ],
+)
+def test_the_muse_twice_daily_windows(hour, initial, start, day):
+    policy = COLLECTOR_POLICIES["the_muse"]
+    assert len(policy.windows) == 2 and policy.min_interval == timedelta(0)
     now = datetime(2026, 9, 27, hour, tzinfo=ZoneInfo(ZONE))
     values = [
         next_collection(now, policy, ZONE, initial=initial, rng=random.Random(seed))

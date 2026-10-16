@@ -7,6 +7,9 @@ from email.utils import parsedate_to_datetime
 import httpx
 
 from src.collectors.base import CollectionError
+from src.logging_filters import install_network_log_filter
+
+install_network_log_filter()
 
 
 def retry_at(value: str) -> datetime | None:

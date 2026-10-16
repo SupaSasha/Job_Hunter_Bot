@@ -46,6 +46,12 @@ COLLECTOR_POLICIES = {
         display_name="Jobicy",
         min_interval=timedelta(hours=1),
     ),
+    "the_muse": CollectorPolicy(
+        "the_muse",
+        "jobs.collect_the_muse",
+        ((time(7), time(8)), (time(19), time(20))),
+        display_name="The Muse",
+    ),
 }
 
 

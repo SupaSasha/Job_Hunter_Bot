@@ -185,6 +185,7 @@ async def test_repository_flushes_without_commit(pg):
             "getonboard",
             "himalayas",
             "jobicy",
+            "the_muse",
         }
         await session.rollback()
     async with pg() as session:
@@ -238,6 +239,7 @@ async def test_failed_update_rolls_back_and_reset_preserves_notification_and_pla
         await service.toggle(a, "sources", "getonboard")
         await service.toggle(a, "sources", "himalayas")
         await service.toggle(a, "sources", "jobicy")
+        await service.toggle(a, "sources", "the_muse")
         with pytest.raises(ValueError):
             await service.toggle(a, "sources", "weworkremotely")
         assert (await service.get_filters(a)).sources == ["weworkremotely"]

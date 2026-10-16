@@ -1,8 +1,9 @@
-import logging
 import re
 from typing import Self
 
 import httpx
+
+from src.logging_filters import install_network_log_filter
 
 
 class TelegramAPIError(Exception):
@@ -16,20 +17,7 @@ class TelegramAPIError(Exception):
         self.retry_after = retry_after
 
 
-class _TelegramLogFilter(logging.Filter):
-    def filter(self, record: logging.LogRecord) -> bool:
-        # httpx logs request URLs at INFO; httpcore may log headers at DEBUG.
-        message = record.getMessage()
-        redacted = re.sub(r"/bot[^/\s\"']+", "/bot<redacted>", message)
-        if message != redacted:
-            record.msg = redacted
-            record.args = ()
-        return True
-
-
-_log_filter = _TelegramLogFilter()
-for _logger in ("httpx", "httpcore.connection", "httpcore.http11", "httpcore.http2"):
-    logging.getLogger(_logger).addFilter(_log_filter)
+install_network_log_filter()
 
 
 class TelegramClient:

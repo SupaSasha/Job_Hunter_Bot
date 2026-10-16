@@ -3,7 +3,8 @@
 Detailed setup, configuration and operational reference. For a quick start, see
 [the README](../README.md). Run all commands from the project root.
 
-FastAPI foundation, Remote OK, We Work Remotely, Get on Board, Himalayas and Jobicy collection, and a Telegram daily job digest.
+FastAPI foundation, six job sources (Remote OK, We Work Remotely, Get on Board,
+Himalayas, Jobicy and The Muse), and a Telegram daily job digest.
 PostgreSQL and Redis run in Docker; Python processes run locally through Poetry.
 
 Project code, comments, documentation and tests use English. The Telegram
@@ -102,6 +103,7 @@ poetry run python -m src.scripts.collect_weworkremotely
 poetry run python -m src.scripts.collect_getonboard
 poetry run python -m src.scripts.collect_himalayas
 poetry run python -m src.scripts.collect_jobicy
+poetry run python -m src.scripts.collect_the_muse
 ```
 
 Or enqueue a worker task:
@@ -120,6 +122,7 @@ Registered sources use separate local windows in SCHEDULER_TIMEZONE
 | getonboard | 06:00–08:00, 20:00–22:00 | jobs.collect_getonboard | collector:getonboard:lock |
 | himalayas | 06:00–07:00, 14:00–15:00, 22:00–23:00 | jobs.collect_himalayas | collector:himalayas:lock |
 | jobicy | 03:00–04:00, 11:00–12:00, 19:00–20:00 | jobs.collect_jobicy | collector:jobicy:lock |
+| the_muse | 07:00–08:00, 19:00–20:00 | jobs.collect_the_muse | collector:the_muse:lock |
 
 The small collector, policy and task registries contain only implemented sources.
 On first dispatch, the missing state is initialized in the nearest window
@@ -244,8 +247,8 @@ poetry run python -m src.collectors.getonboard
 
 The persistence script above uses the existing CollectionService, source lock,
 CollectorState and JobPipeline. Jobs enter the shared jobs table and existing
-daily digest; collection sends no messages. /collect publishes five independent
-tasks, /status displays all five states, and job cards use the shared source
+daily digest; collection sends no messages. /collect publishes six independent
+tasks, /status displays all six states, and job cards use the shared source
 name helper to display Get on Board. See [the stage report](getonboard-stage-report.md)
 for real collection counts, LATAM observations and verification results.
 
@@ -276,7 +279,28 @@ skills or timezone requirements, so those fields remain unknown.
 
 Migration `b927c64ed108` appends Jobicy to saved source selections without
 re-enabling disabled older sources or resetting other preferences. New profiles
-include all five active sources. See the [implementation and live audit](jobicy-stage-report.md).
+include all active sources. See the [implementation and live audit](jobicy-stage-report.md).
+
+## The Muse
+
+The [official API](https://www.themuse.com/developers/api/v2) permits anonymous
+testing. Register an app and set `THE_MUSE_API_KEY` for ongoing use; the provider
+requires registration beyond testing. With MODE=PROD, a missing key fails before
+any network request. The key uses the documented `api_key`
+query parameter, which is redacted in HTTP logs. Server `.env` is never replaced
+by deployment; configure the key there securely before production use.
+
+Collection queries the broad `Flexible / Remote` location across all categories,
+up to three pages of 20 jobs (`THE_MUSE_MAX_PAGES=3`, maximum 5). The API ranks
+results by multiple factors; `descending=true` does not guarantee newest-first
+publication order. Only the explicit source location marker sets remote=True.
+Cities do not establish eligibility regions or timezones. The current bool DTO
+represents both non-remote and unknown as False. Structured salary, employment,
+technical skills and timezone fields are unavailable in the observed response.
+
+Migration `c638e7a2910f` appends The Muse to saved source selections and updates
+defaults while preserving other preferences. See the [implementation and live
+audit](the-muse-stage-report.md) for data completeness and remote limitations.
 
 ## Daily delivery
 
@@ -291,6 +315,7 @@ Beat tasks:
 | jobs.collect_getonboard | Due Get on Board collector or manual task |
 | jobs.collect_himalayas | Due Himalayas collector or manual task |
 | jobs.collect_jobicy | Due Jobicy collector or manual task, subject to the hourly sync guard |
+| jobs.collect_the_muse | Due The Muse collector or manual task |
 | notifications.send_daily_digest | Due user or manual task |
 
 Tasks are thin `asyncio.run` wrappers. Every invocation creates and disposes its
@@ -431,7 +456,7 @@ IDs receive `This command is not available.` without exposing account data.
 | /filters | Configure persisted job search filters with inline menus and text input |
 | /cancel | Cancel pending filter input |
 | /settings | Choose English/Español; view notification settings and edit timezone, digest time and score |
-| /collect | Owner only: enqueue Remote OK, We Work Remotely, Get on Board, Himalayas and Jobicy collection |
+| /collect | Owner only: enqueue all six registered job collectors |
 | /digest | Owner only: check today's state and queue an eligible digest |
 | /stats [24h\|7d\|30d] | Owner only: read historical pipeline statistics; default 7d |
 
@@ -448,7 +473,7 @@ addressed to other bots. The username is obtained once at startup using
 `message` and `callback_query` updates. Both use the persistent polling checkpoint.
 
 `BotQueryRepository` performs read-only status/settings queries. /status lists
-all five registered collectors and their persisted last success, next run and status.
+all six registered collectors and their persisted last success, next run and status.
 Missing state is shown as Never / Not scheduled, without making up timestamps.
 `FeedbackRepository.get_saved_jobs_for_user(user_id, limit=10)` selects only
 that user's `saved` feedback, newest update first. Saved-job output is split
