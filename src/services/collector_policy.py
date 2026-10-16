@@ -52,6 +52,12 @@ COLLECTOR_POLICIES = {
         ((time(7), time(8)), (time(19), time(20))),
         display_name="The Muse",
     ),
+    "hacker_news": CollectorPolicy(
+        "hacker_news",
+        "jobs.collect_hacker_news",
+        ((time(13), time(14)),),
+        display_name="Hacker News",
+    ),
 }
 
 

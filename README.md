@@ -1,8 +1,8 @@
 # Job Hunter Bot
 
 A Telegram bot that finds remote jobs from **Remote OK**, **We Work Remotely**,
-**Get on Board**, **Himalayas**, **Jobicy** and **The Muse**. It filters jobs by your
-preferences and sends daily digests.
+**Get on Board**, **Himalayas**, **Jobicy**, **The Muse** and **Hacker News — Who is
+hiring?**. It filters jobs by your preferences and sends daily digests.
 
 - Personal filters for technologies, keywords, regions, salary and experience.
 - Match scoring, saved vacancies and feedback buttons.

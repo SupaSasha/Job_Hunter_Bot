@@ -389,6 +389,7 @@ async def test_status_lists_each_persisted_source_and_missing_registered_state(h
         ("himalayas", "Himalayas"),
         ("jobicy", "Jobicy"),
         ("the_muse", "The Muse"),
+        ("hacker_news", "Hacker News"),
     ],
 )
 async def test_source_status_and_never_run_placeholder(handler, source, name):
@@ -407,7 +408,7 @@ async def test_source_status_and_never_run_placeholder(handler, source, name):
     assert "Remote OK" in reply(handler) and "We Work Remotely" in reply(handler)
 
 
-async def test_owner_collect_dispatches_all_six_real_registered_tasks(handler):
+async def test_owner_collect_dispatches_all_seven_real_registered_tasks(handler):
     from contextlib import ExitStack
     from unittest.mock import Mock, patch
 
@@ -421,6 +422,7 @@ async def test_owner_collect_dispatches_all_six_real_registered_tasks(handler):
         "himalayas",
         "jobicy",
         "the_muse",
+        "hacker_news",
     }
     with ExitStack() as stack:
         publishers = [

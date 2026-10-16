@@ -1,0 +1,83 @@
+{
+  "id": 49922569,
+  "title": "Ask HN: Who is hiring? (October 2026)",
+  "author": "whoishiring",
+  "type": "story",
+  "parent_id": null,
+  "created_at": "2026-10-01T15:02:07.000Z",
+  "children": [
+    {
+      "id": 49922584,
+      "type": "comment",
+      "parent_id": 49922569,
+      "created_at": "2026-10-01T15:02:37.000Z",
+      "author": "example_employer",
+      "text": "Acme &amp; Co | Senior Backend Engineer | Remote | LATAM | Full-time | UTC-5 to UTC+1 | USD 120k–160k/year<p>Stack: Python / FastAPI / PostgreSQL / Redis / Docker. We are hiring.",
+      "children": [
+        {
+          "id": 49922999,
+          "type": "comment",
+          "parent_id": 49922584,
+          "text": "Reply | Backend Engineer | Remote",
+          "created_at": "2026-10-01T16:00:00Z",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": 49922585,
+      "type": "comment",
+      "parent_id": 49922569,
+      "created_at": "2026-10-01T15:02:37.000Z",
+      "author": "example_employer",
+      "text": "Beta | Backend Engineer | On-site NYC | Contract<p>We are hiring. Stack: Go / Rust.",
+      "children": []
+    },
+    {
+      "id": 49922586,
+      "type": "comment",
+      "parent_id": 49922569,
+      "created_at": "2026-10-01T15:02:37.000Z",
+      "author": "example_employer",
+      "text": "Gamma | Multiple roles | Remote (US only) | Full-time<p>We are hiring:<ul><li>Backend Engineer</li><li>Product Designer</li></ul>",
+      "children": []
+    },
+    {
+      "id": 49922587,
+      "type": "comment",
+      "parent_id": 49922569,
+      "created_at": "2026-10-01T15:02:37.000Z",
+      "author": "example_employer",
+      "text": "We are hiring a Product Designer.<p>Help design useful tools.",
+      "children": []
+    },
+    {
+      "id": 49922588,
+      "type": "comment",
+      "parent_id": 49922569,
+      "created_at": "2026-10-01T15:02:37.000Z",
+      "author": "example_employer",
+      "text": "[deleted]",
+      "children": [],
+      "deleted": true
+    },
+    {
+      "id": 49922589,
+      "type": "comment",
+      "parent_id": 49922569,
+      "created_at": "2026-10-01T15:02:37.000Z",
+      "author": "example_employer",
+      "text": "Please mention remote eligibility in this thread.",
+      "children": []
+    },
+    {
+      "id": 49922590,
+      "type": "comment",
+      "parent_id": 49922569,
+      "created_at": "2026-10-01T15:02:37.000Z",
+      "author": "example_employer",
+      "text": "As a software engineer, I wish every company disclosed salary.",
+      "children": []
+    }
+  ]
+}

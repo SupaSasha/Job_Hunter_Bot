@@ -1,4 +1,5 @@
 from src.collectors.getonboard import GetOnBoardCollector
+from src.collectors.hacker_news import HackerNewsCollector
 from src.collectors.himalayas import HimalayasCollector
 from src.collectors.jobicy import JobicyCollector
 from src.collectors.remoteok import RemoteOKCollector
@@ -12,4 +13,5 @@ COLLECTORS = {
     "himalayas": HimalayasCollector,
     "jobicy": JobicyCollector,
     "the_muse": TheMuseCollector,
+    "hacker_news": HackerNewsCollector,
 }

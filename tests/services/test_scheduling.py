@@ -222,10 +222,11 @@ async def test_dispatch_routes_active_collectors_without_future_sources():
             "himalayas",
             "jobicy",
             "the_muse",
+            "hacker_news",
             "unknown",
         )
     ]
-    assert await service.dispatch_collectors(NOW) == 6
+    assert await service.dispatch_collectors(NOW) == 7
     assert [call.args[0] for call in service.publish.call_args_list] == [
         "jobs.collect_remoteok",
         "jobs.collect_weworkremotely",
@@ -233,6 +234,7 @@ async def test_dispatch_routes_active_collectors_without_future_sources():
         "jobs.collect_himalayas",
         "jobs.collect_jobicy",
         "jobs.collect_the_muse",
+        "jobs.collect_hacker_news",
     ]
     assert [call.args[0] for call in service.collectors.ensure.call_args_list] == [
         "remoteok",
@@ -241,6 +243,7 @@ async def test_dispatch_routes_active_collectors_without_future_sources():
         "himalayas",
         "jobicy",
         "the_muse",
+        "hacker_news",
     ]
 
 
@@ -342,6 +345,29 @@ def test_jobicy_windows_respect_daily_frequency(hour, initial, start, day):
 def test_the_muse_twice_daily_windows(hour, initial, start, day):
     policy = COLLECTOR_POLICIES["the_muse"]
     assert len(policy.windows) == 2 and policy.min_interval == timedelta(0)
+    now = datetime(2026, 9, 27, hour, tzinfo=ZoneInfo(ZONE))
+    values = [
+        next_collection(now, policy, ZONE, initial=initial, rng=random.Random(seed))
+        for seed in range(10)
+    ]
+    assert len(set(values)) > 1
+    for value in values:
+        local = value.astimezone(ZoneInfo(ZONE))
+        assert local.day == day and start <= local.hour < start + 1
+
+
+@pytest.mark.parametrize(
+    "hour,initial,start,day",
+    [
+        (12, True, 13, 27),
+        (13, True, 13, 27),
+        (13, False, 13, 28),
+        (14, False, 13, 28),
+    ],
+)
+def test_hacker_news_once_daily_window(hour, initial, start, day):
+    policy = COLLECTOR_POLICIES["hacker_news"]
+    assert len(policy.windows) == 1
     now = datetime(2026, 9, 27, hour, tzinfo=ZoneInfo(ZONE))
     values = [
         next_collection(now, policy, ZONE, initial=initial, rng=random.Random(seed))

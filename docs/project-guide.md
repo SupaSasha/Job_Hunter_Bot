@@ -3,8 +3,8 @@
 Detailed setup, configuration and operational reference. For a quick start, see
 [the README](../README.md). Run all commands from the project root.
 
-FastAPI foundation, six job sources (Remote OK, We Work Remotely, Get on Board,
-Himalayas, Jobicy and The Muse), and a Telegram daily job digest.
+FastAPI foundation, seven job sources (Remote OK, We Work Remotely, Get on Board,
+Himalayas, Jobicy, The Muse and Hacker News), and a Telegram daily job digest.
 PostgreSQL and Redis run in Docker; Python processes run locally through Poetry.
 
 Project code, comments, documentation and tests use English. The Telegram
@@ -104,6 +104,7 @@ poetry run python -m src.scripts.collect_getonboard
 poetry run python -m src.scripts.collect_himalayas
 poetry run python -m src.scripts.collect_jobicy
 poetry run python -m src.scripts.collect_the_muse
+poetry run python -m src.scripts.collect_hacker_news
 ```
 
 Or enqueue a worker task:
@@ -123,6 +124,7 @@ Registered sources use separate local windows in SCHEDULER_TIMEZONE
 | himalayas | 06:00–07:00, 14:00–15:00, 22:00–23:00 | jobs.collect_himalayas | collector:himalayas:lock |
 | jobicy | 03:00–04:00, 11:00–12:00, 19:00–20:00 | jobs.collect_jobicy | collector:jobicy:lock |
 | the_muse | 07:00–08:00, 19:00–20:00 | jobs.collect_the_muse | collector:the_muse:lock |
+| hacker_news | 13:00–14:00 | jobs.collect_hacker_news | collector:hacker_news:lock |
 
 The small collector, policy and task registries contain only implemented sources.
 On first dispatch, the missing state is initialized in the nearest window
@@ -247,8 +249,8 @@ poetry run python -m src.collectors.getonboard
 
 The persistence script above uses the existing CollectionService, source lock,
 CollectorState and JobPipeline. Jobs enter the shared jobs table and existing
-daily digest; collection sends no messages. /collect publishes six independent
-tasks, /status displays all six states, and job cards use the shared source
+daily digest; collection sends no messages. /collect publishes seven independent
+tasks, /status displays all seven states, and job cards use the shared source
 name helper to display Get on Board. See [the stage report](getonboard-stage-report.md)
 for real collection counts, LATAM observations and verification results.
 
@@ -302,6 +304,26 @@ Migration `c638e7a2910f` appends The Muse to saved source selections and updates
 defaults while preserving other preferences. See the [implementation and live
 audit](the-muse-stage-report.md) for data completeness and remote limitations.
 
+## Hacker News — Who is hiring?
+
+The [public Algolia HN API](https://hn.algolia.com/api) needs no key. Collection
+discovers the exact current UTC month title from whoishiring, falling back only
+to the previous month. One item request supplies the chosen thread's direct
+children. Embedded replies are ignored, with no recursive network requests.
+There is no global HN crawl or hardcoded story ID.
+
+Each accepted comment produces one job. The deterministic parser uses clear
+company/header/role markers and the existing technology vocabulary, HTML helper,
+normalizer and timezone parser. Multiple roles remain one entry; unknown fields
+stay unknown. Bare Remote does not imply worldwide. The bool DTO represents
+both non-remote and unknown as False. Dollar symbols alone do not establish USD,
+and salary periods are retained only when explicit.
+
+Migration `d749a8b3e205` adds Hacker News to saved source selections/defaults,
+preserving other preferences and disabled older sources. The schedule is once
+daily, with existing jitter. See the [implementation and live audit](hacker-news-stage-report.md)
+for parser limitations, completeness and actual collection results.
+
 ## Daily delivery
 
 Beat tasks:
@@ -316,6 +338,7 @@ Beat tasks:
 | jobs.collect_himalayas | Due Himalayas collector or manual task |
 | jobs.collect_jobicy | Due Jobicy collector or manual task, subject to the hourly sync guard |
 | jobs.collect_the_muse | Due The Muse collector or manual task |
+| jobs.collect_hacker_news | Due Hacker News collector or manual task |
 | notifications.send_daily_digest | Due user or manual task |
 
 Tasks are thin `asyncio.run` wrappers. Every invocation creates and disposes its
@@ -456,7 +479,7 @@ IDs receive `This command is not available.` without exposing account data.
 | /filters | Configure persisted job search filters with inline menus and text input |
 | /cancel | Cancel pending filter input |
 | /settings | Choose English/Español; view notification settings and edit timezone, digest time and score |
-| /collect | Owner only: enqueue all six registered job collectors |
+| /collect | Owner only: enqueue all seven registered job collectors |
 | /digest | Owner only: check today's state and queue an eligible digest |
 | /stats [24h\|7d\|30d] | Owner only: read historical pipeline statistics; default 7d |
 
@@ -473,7 +496,7 @@ addressed to other bots. The username is obtained once at startup using
 `message` and `callback_query` updates. Both use the persistent polling checkpoint.
 
 `BotQueryRepository` performs read-only status/settings queries. /status lists
-all six registered collectors and their persisted last success, next run and status.
+all seven registered collectors and their persisted last success, next run and status.
 Missing state is shown as Never / Not scheduled, without making up timestamps.
 `FeedbackRepository.get_saved_jobs_for_user(user_id, limit=10)` selects only
 that user's `saved` feedback, newest update first. Saved-job output is split
