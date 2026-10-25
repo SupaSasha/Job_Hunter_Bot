@@ -33,7 +33,7 @@ cd -- "$1"
 backup_root="$2"
 compose=(docker compose -f docker-compose.production.yml)
 "${compose[@]}" config --quiet
-"${compose[@]}" exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > "$backup_root/db-backup-$(date -u +%Y%m%dT%H%M%SZ).sql"
+"${compose[@]}" exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' </dev/null > "$backup_root/db-backup-$(date -u +%Y%m%dT%H%M%SZ).sql"
 find "$backup_root" -maxdepth 1 -type f -name 'db-backup-*.sql' -mtime +7 -delete
 "${compose[@]}" build api
 "${compose[@]}" up -d --wait postgres redis
