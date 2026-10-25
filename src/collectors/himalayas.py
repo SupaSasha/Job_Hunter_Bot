@@ -10,7 +10,7 @@ import httpx
 
 from src.collectors.base import BaseJobCollector, CollectionError
 from src.collectors.pagination import collect_cursor_pages
-from src.collectors.skills import technical_categories
+from src.collectors.skills import category_skills, source_skills
 from src.collectors.text import html_to_text
 from src.schemas.job import JobDTO
 
@@ -126,8 +126,12 @@ def parse_job(raw: dict, *, collected_at: datetime | None = None) -> JobDTO:
         salary_max=_salary(raw.get("maxSalary")),
         currency=_text(raw.get("currency")),
         salary_period=_text(raw.get("salaryPeriod")),
-        technologies=technical_categories(
-            _strings(raw.get("categories")), role_labels=True
+        technologies=source_skills(
+            [
+                *_strings(raw.get("skills")),
+                *_strings(raw.get("tags")),
+                *category_skills(_strings(raw.get("categories"))),
+            ]
         ),
         timezone_text=_timezone_text(raw.get("timezoneRestrictions")),
         published_at=_published(raw.get("pubDate")),

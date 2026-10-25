@@ -138,7 +138,11 @@ async def test_defaults_off_existing_preserved_opt_in_and_schema_parity(
         await session.flush()
         session.add(
             UserFilterORM(
-                user_id=old.id, sources=["jooble"], keywords=["custom"], min_salary=2500
+                user_id=old.id,
+                sources=["jooble"],
+                keywords=["custom"],
+                min_salary=2500,
+                exclude_us_only=True,
             )
         )
         await session.execute(
@@ -252,4 +256,4 @@ async def test_real_collector_mock_http_common_pipeline_and_query_audit(
         == collector.last_report["unique_jobs"]
         == 2
     )
-    assert collector.query_job_ids == {"2210": ["800000001", "800000100"]}
+    assert collector.query_job_ids == {"remote": ["800000001", "800000100"]}

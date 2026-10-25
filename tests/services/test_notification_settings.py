@@ -187,3 +187,18 @@ async def test_commit_failure_rolls_back(service):
     with pytest.raises(RuntimeError):
         await service.update_min_score(7, 80)
     service.session.rollback.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    "timezone",
+    [
+        "America/Montevideo",
+        "Europe/Berlin",
+        "Asia/Tokyo",
+        "Africa/Johannesburg",
+        "Australia/Sydney",
+    ],
+)
+async def test_global_iana_timezones(service, timezone):
+    await service.update_timezone(7, timezone)
+    service.repository.update_timezone.assert_awaited_once_with(7, timezone)

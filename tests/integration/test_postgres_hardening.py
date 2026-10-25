@@ -220,7 +220,7 @@ async def test_postgresql_arrays_and_updated_status_constraints(pg):
         )
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "e85ab9c12460"
+            == "a2b3c4d5e6f7"
         )
 
 

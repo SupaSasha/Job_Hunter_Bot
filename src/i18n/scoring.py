@@ -1,59 +1,74 @@
 import re
 
-from src.i18n import DEFAULT_LANGUAGE, Language, display_label, resolve_language, t
+from src.i18n import DEFAULT_LANGUAGE, Language, resolve_language, t
 
 STATIC_RULES = {
     "Base score: +50": "score.base",
-    "Remote: +10": "score.remote",
-    "Full-time: +3": "score.full_time",
     "Region is not specified: -2": "score.region_penalty",
     "Remote region is unknown": "score.region_unknown",
     "Timezone is not specified: -2": "score.timezone_penalty",
     "Timezone is not specified": "score.timezone_missing",
-    "Timezone compatible: +10": "score.timezone_compatible",
-    "Timezone distance: 5+ hours: -20": "score.timezone_far",
+    "Experience level is unknown: -2": "score.experience_unknown",
     "Experience level is not specified": "score.experience_missing",
     "Salary is not specified: -2": "score.salary_penalty",
     "Salary is not specified": "score.salary_missing",
+    "Salary currency is unknown: -2": "score.salary_currency_unknown",
+    "Salary currency is not specified": "score.salary_currency_missing",
+    "Employment type is unknown: -2": "score.employment_unknown",
     "Employment type is not specified": "score.employment_missing",
 }
 RULE_PATTERNS = (
     (
-        r"Preferred technology (?P<technology>.+): (?P<points>[+-]\d+)",
+        r"Preferred skills matched \((?P<matched>\d+/\d+)\): \+(?P<points>\d+)",
         "score.preferred",
     ),
-    (r"Keyword: (?P<keyword>.+): \+3", "score.keyword"),
-    (r"(?P<region>.+) region: (?P<points>[+-]\d+)", "score.region"),
     (
-        r"Timezone distance: (?P<distance>[\d.]+) hour\(s\): (?P<points>[+-]?\d+)",
+        r"Required skills matched \((?P<matched>\d+/\d+)\): \+(?P<points>\d+)",
+        "score.required",
+    ),
+    (
+        r"Keywords matched \((?P<matched>\d+/\d+)\): \+(?P<points>\d+)",
+        "score.keyword",
+    ),
+    (
+        r"Region matches user preferences: \+(?P<points>\d+)",
+        "score.region",
+    ),
+    (r"Timezone compatible: \+(?P<points>\d+)", "score.timezone_compatible"),
+    (
+        r"Timezone within (?P<distance>[12]) hours?: \+(?P<points>\d+)",
         "score.timezone_distance",
     ),
     (
-        r"Timezone distance: (?P<distance>[\d.]+) hours: (?P<points>[+-]?\d+)",
-        "score.timezone_distance",
+        r"Timezone difference: (?P<distance>[\d.]+) hours: no adjustment",
+        "score.timezone_no_adjustment",
     ),
-    (r"(?P<level>.+) level: (?P<points>[+-]\d+)", "score.level"),
-    (r"Title seniority: (?P<level>.+): (?P<points>[+-]\d+)", "score.title_seniority"),
     (
-        r"Requires (?P<years>\d+)\+ years of experience: (?P<points>[+-]\d+)",
-        "score.years",
+        r"Timezone differs by (?P<distance>[\d.]+)\+? hours: (?P<points>-\d+)",
+        "score.timezone_far",
+    ),
+    (
+        r"Experience matches user preferences: \+(?P<points>\d+)",
+        "score.experience_match",
+    ),
+    (
+        r"Inferred experience differs from user preferences: (?P<points>-\d+)",
+        "score.experience_mismatch",
+    ),
+    (r"Salary meets user minimum: \+(?P<points>\d+)", "score.salary_match"),
+    (
+        r"Employment matches user preferences: \+(?P<points>\d+)",
+        "score.employment_match",
+    ),
+    (
+        r"Remote matches user preference: \+(?P<points>\d+)",
+        "score.remote_match",
     ),
 )
-REGION_VALUES = {
-    "Worldwide": "worldwide",
-    "LATAM": "latam",
-    "Uruguay": "uruguay",
-    "South America": "south_america",
-    "Americas": "americas",
-}
 
 
 def format_score_rule(rule: str, language: Language = DEFAULT_LANGUAGE) -> str:
-    """Localize presentation of legacy rule explanations, leaving scoring untouched.
-
-    Technology names and keyword data remain unchanged. Unknown custom rule text
-    is preserved rather than treated as a translation key or vacancy content.
-    """
+    """Localize generic user-relative score rules without altering their meaning."""
     if resolve_language(language) == DEFAULT_LANGUAGE:
         return rule
     if rule in STATIC_RULES:
@@ -62,11 +77,5 @@ def format_score_rule(rule: str, language: Language = DEFAULT_LANGUAGE) -> str:
         match = re.fullmatch(pattern, rule)
         if match:
             params = match.groupdict()
-            if "region" in params:
-                params["region"] = display_label(
-                    REGION_VALUES.get(params["region"], params["region"]), language
-                )
-            if "level" in params:
-                params["level"] = display_label(params["level"].lower(), language)
             return t(key, language, **params)
     return rule

@@ -6,7 +6,7 @@ from src.db.base import Base
 from src.models.timestamps import Timestamps
 from src.services.collector_policy import COLLECTOR_POLICIES
 
-DEFAULT_REGIONS = ("worldwide", "latam", "south_america", "uruguay")
+DEFAULT_REGIONS: tuple[str, ...] = ("worldwide",)
 AVAILABLE_SOURCES = tuple(COLLECTOR_POLICIES)
 DEFAULT_SOURCES = tuple(
     source for source, policy in COLLECTOR_POLICIES.items() if policy.default_enabled
@@ -45,7 +45,7 @@ class UserFilterORM(Timestamps, Base):
     allowed_regions: Mapped[list[str]] = list_column(DEFAULT_REGIONS)
     remote_only: Mapped[bool] = mapped_column(default=True, server_default=text("true"))
     exclude_us_only: Mapped[bool] = mapped_column(
-        default=True, server_default=text("true")
+        default=False, server_default=text("false")
     )
     employment_types: Mapped[list[str]] = list_column()
     experience_levels: Mapped[list[str]] = list_column()

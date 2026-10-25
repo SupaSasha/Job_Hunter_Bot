@@ -44,7 +44,7 @@ def test_filter_and_preference_do_not_match_different_c_languages(required, acce
     )
     assert FilterService().evaluate(job, filters).accepted is accepted
     score = ScoringService().calculate(job, filters)
-    assert any("Preferred technology" in r for r in score.matched_rules) is accepted
+    assert any("Preferred skills matched" in r for r in score.matched_rules) is accepted
 
 
 @pytest.mark.parametrize(
@@ -73,7 +73,36 @@ def test_fractional_distance_does_not_fall_into_largest_penalty(monkeypatch):
         timezone_max_utc_offset=-3,
     )
     assert (
-        ScoringService._score_timezone(job, UserFilterDTO(), rules, penalties, warnings)
+        ScoringService._score_timezone(
+            job,
+            UserFilterDTO(timezone="UTC"),
+            rules,
+            penalties,
+            warnings,
+        )
         == 7
     )
     assert not penalties
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("Microsoft Excel", "excel"),
+        ("MS Excel", "excel"),
+        ("Python", "python"),
+        ("Figma", "figma"),
+        ("Salesforce", "salesforce"),
+        ("Accounting", "accounting"),
+        ("UX Research", "ux research"),
+        ("B2B Sales", "b2b sales"),
+        ("Talent Acquisition", "talent acquisition"),
+        ("Unknown Professional Skill", "unknown professional skill"),
+        ("Бухгалтерия", "бухгалтерия"),
+        ("Google Ads", "google ads"),
+        ("Google Adsense", "google adsense"),
+        ("uxresearch", "ux research"),
+    ],
+)
+def test_generic_skill_normalization(value, expected):
+    assert normalize_technology(value) == expected

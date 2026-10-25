@@ -17,6 +17,12 @@ def fake_redis():
     async def delete(key):
         return int(data.pop(key, None) is not None)
 
+    async def increment(key):
+        value = int(data.get(key, 0)) + 1
+        data[key] = value
+        return value
+
+    redis.incr.side_effect = increment
     redis.set.side_effect = set_value
     redis.get.side_effect = get_value
     redis.delete.side_effect = delete

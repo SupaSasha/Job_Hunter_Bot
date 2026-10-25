@@ -35,15 +35,53 @@ def test_selection_real_filters_scoring_threshold_order_and_cap():
     low = job(2)
     rejected = job(3).model_copy(update={"technologies": ["java"]})
     items = [(2, low), (3, rejected), (1, high)]
-    selected = select_digest_jobs(items, default_user_filters(), 0, 10)
+    filters = default_user_filters().model_copy(
+        update={
+            "required_technologies": ["python"],
+            "preferred_technologies": ["python", "fastapi", "docker", "postgresql"],
+        }
+    )
+    selected = select_digest_jobs(items, filters, 0, 10)
     assert [item[0] for item in selected] == [1, 2]
     assert selected[0][2].score > selected[1][2].score
     threshold = selected[0][2].score
-    assert [
-        i[0] for i in select_digest_jobs(items, default_user_filters(), threshold, 10)
-    ] == [1]
-    assert len(select_digest_jobs(items, default_user_filters(), 0, 1)) == 1
-    assert select_digest_jobs(items, default_user_filters(), 0, 0) == []
+    assert [i[0] for i in select_digest_jobs(items, filters, threshold, 10)] == [1]
+    assert len(select_digest_jobs(items, filters, 0, 1)) == 1
+    assert select_digest_jobs(items, filters, 0, 0) == []
+
+
+def test_same_jobs_rank_per_recipient_skills_in_digest_pipeline():
+    python_job = job(1).model_copy(
+        update={
+            "title": "Python Backend Engineer",
+            "technologies": ["python"],
+            "remote": False,
+            "remote_regions": [],
+        }
+    )
+    design_job = job(2).model_copy(
+        update={
+            "title": "UX Designer",
+            "technologies": ["figma"],
+            "remote": False,
+            "remote_regions": [],
+        }
+    )
+    candidates = [(1, python_job), (2, design_job)]
+    python_filters = default_user_filters().model_copy(
+        update={"preferred_technologies": ["python"], "remote_only": False}
+    )
+    design_filters = default_user_filters().model_copy(
+        update={"preferred_technologies": ["figma"], "remote_only": False}
+    )
+
+    python_rank = select_digest_jobs(candidates, python_filters, 0, 10)
+    design_rank = select_digest_jobs(candidates, design_filters, 0, 10)
+
+    assert [item[0] for item in python_rank] == [1, 2]
+    assert [item[0] for item in design_rank] == [2, 1]
+    assert python_rank[0][2].score > python_rank[1][2].score
+    assert design_rank[0][2].score > design_rank[1][2].score
 
 
 class FakeRepository:
@@ -273,8 +311,16 @@ async def test_manual_request_during_another_run_does_not_send_duplicate_cards(s
     assert notify.await_count == 2
 
 
-async def test_digest_persists_pipeline_and_delivery_metrics(setup):
+async def test_digest_persists_pipeline_and_delivery_metrics(setup, monkeypatch):
     service, _, notify = setup
+    filters = AsyncMock()
+    filters.get_filters.return_value = default_user_filters().model_copy(
+        update={"required_technologies": ["python"]}
+    )
+    # This test explicitly opts into a Python hard filter; it is not a product default.
+    monkeypatch.setattr(
+        "src.services.digests.UserFilterService", lambda session: filters
+    )
     rejected = job(3).model_copy(update={"technologies": ["java"]})
     service.repository.items.append((3, rejected))
     notify.side_effect = [

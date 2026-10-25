@@ -17,6 +17,7 @@ from src.models.user_filter import AVAILABLE_SOURCES
 from src.repositories.users import UserRepository
 from src.schemas.filters import UserFilterDTO
 from src.services.collector_policy import COLLECTOR_POLICIES, source_display_name
+from src.services.regions import country_label, normalize_country
 from src.services.user_filters import (
     CURRENCIES,
     EMPLOYMENT_TYPES,
@@ -68,7 +69,11 @@ ROOT_ITEMS = tuple(
 def label(value: str, language: Language = DEFAULT_LANGUAGE) -> str:
     if value in COLLECTOR_POLICIES:
         return source_display_name(value)
-    return display_label(value, language)
+    return (
+        display_label(country_label(value), language)
+        if normalize_country(value)
+        else display_label(value, language)
+    )
 
 
 def keyboard(rows: list[list[dict]]) -> dict:
@@ -105,9 +110,7 @@ def format_filters(
         "experience_levels",
         "sources",
     ):
-        empty = t(
-            "common.none" if field == "allowed_regions" else "common.any", language
-        )
+        empty = t("common.any", language)
         values = list_text(
             [label(value, language) for value in getattr(filters, field)], empty
         )
@@ -157,6 +160,25 @@ def render_screen(
                 ),
             ]
         )
+    if screen == "countries":
+        selected = [
+            country_label(value)
+            for value in filters.allowed_regions
+            if normalize_country(value)
+        ]
+        return t("filters.countries", language) + ":\n\n" + list_text(
+            selected, t("common.none", language)
+        ), keyboard(
+            [
+                [
+                    button(
+                        t("common." + action, language), f"filters:countries:{action}"
+                    )
+                    for action in ("add", "remove", "clear")
+                ],
+                back("regions", language),
+            ]
+        )
     if screen in TOGGLE_EDITORS:
         field, title, values = TOGGLE_EDITORS[screen]
         key = (
@@ -180,6 +202,13 @@ def render_screen(
             for value in values
         ]
         if screen == "regions":
+            rows.append([button(t("filters.countries", language), "filters:countries")])
+            selected = [
+                country_label(value) for value in chosen if normalize_country(value)
+            ]
+            text += (
+                "\n\n" + t("filters.countries", language) + ": " + ", ".join(selected)
+            )
             rows.extend(
                 [
                     [
@@ -216,6 +245,7 @@ def render_screen(
                     ]
                     for value in (*CURRENCIES, "Any")
                 ],
+                [button(t("common.other", language), "filters:currency:Other")],
                 back("salary", language),
             ]
         )
@@ -327,6 +357,10 @@ class FiltersHandler:
         )
         if screen == "min_salary":
             text, target = t("input.salary", language), "salary"
+        elif screen == "custom_currency":
+            text, target = t("input.currency", language), "currency"
+        elif screen == "countries":
+            text, target = t("input.countries", language), "countries"
         else:
             noun = (
                 "tech"
@@ -340,6 +374,8 @@ class FiltersHandler:
             text, target = t(f"input.{operation}_{noun}", language), screen
             if screen == "keywords":
                 text += t("input.keywords_example", language)
+            elif screen in {"reqtech", "preftech", "extech"}:
+                text += t("input.skills_example", language)
         return text + t("input.expiry", language), keyboard([back(target, language)])
 
     async def handle(self, callback: dict) -> None:
@@ -374,7 +410,10 @@ class FiltersHandler:
             screen, value = parts[1], parts[2] if len(parts) == 3 else None
             await self.pending.clear(chat_id)
             filters = await self.service.get_filters(user_id)
-            if screen in LIST_EDITORS and value in {"add", "remove"}:
+            if (screen in LIST_EDITORS or screen == "countries") and value in {
+                "add",
+                "remove",
+            }:
                 text, markup = await self._prompt(
                     chat_id, message_id, screen, value, language
                 )
@@ -382,12 +421,19 @@ class FiltersHandler:
                 text, markup = await self._prompt(
                     chat_id, message_id, screen, "add", language
                 )
+            elif screen == "currency" and value == "Other":
+                text, markup = await self._prompt(
+                    chat_id, message_id, "custom_currency", "add", language
+                )
             else:
                 updated = False
                 if screen in LIST_EDITORS and value == "clear":
                     filters = await self.service.update_list(
                         user_id, LIST_EDITORS[screen][0], "clear"
                     )
+                    updated = True
+                elif screen == "countries" and value == "clear":
+                    filters = await self.service.update_countries(user_id, "clear")
                     updated = True
                 elif screen in TOGGLE_EDITORS and value is not None:
                     filters = await self.service.toggle(
@@ -442,13 +488,20 @@ class FiltersHandler:
             return
         user_id, chat_id, language = identity
         state = await self.pending.get(chat_id)
-        if state is None:
+        if state is None or not state.action.startswith("filters:"):
             return
         screen = state.action.split(":")[1]
         try:
             if screen == "min_salary":
                 filters = await self.service.update_min_salary(user_id, text)
                 screen = "salary"
+            elif screen == "custom_currency":
+                filters = await self.service.update_currency(user_id, text)
+                screen = "salary"
+            elif screen == "countries":
+                filters = await self.service.update_countries(
+                    user_id, state.operation, text
+                )
             else:
                 filters = await self.service.update_list(
                     user_id, LIST_EDITORS[screen][0], state.operation, text
@@ -460,7 +513,15 @@ class FiltersHandler:
                     state.message_id,
                     t("input.retry", language, error=validation_message(exc, language)),
                     keyboard(
-                        [back("salary" if screen == "min_salary" else screen, language)]
+                        [
+                            back(
+                                {
+                                    "min_salary": "salary",
+                                    "custom_currency": "currency",
+                                }.get(screen, screen),
+                                language,
+                            )
+                        ]
                     ),
                 )
             except TelegramAPIError:

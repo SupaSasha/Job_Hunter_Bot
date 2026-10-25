@@ -46,7 +46,6 @@ def test_real_feed_shape_maps_existing_dto():
         "Python",
         "PostgreSQL",
         "Docker",
-        "Back-End Programming",
     ]
     assert job.employment_type == "Full-Time"
     for field in (
@@ -217,3 +216,18 @@ async def test_feed_size_limit(transport, monkeypatch):
     transport(lambda _: httpx.Response(200, content=FEED))
     with pytest.raises(CollectionError, match="size limit"):
         await WeWorkRemotelyCollector().collect()
+
+
+def test_nontech_structured_skills_survive_profession_categories():
+    item = ITEM.replace(
+        "Django and Python, PostgreSQL, and Docker",
+        "Figma, UX Research, Excel, Salesforce, Accounting, Communication",
+    )
+    job = parse_feed(f"<rss><channel>{item}</channel></rss>".encode())[0]
+    assert job.technologies == [
+        "Figma",
+        "UX Research",
+        "Excel",
+        "Salesforce",
+        "Accounting",
+    ]

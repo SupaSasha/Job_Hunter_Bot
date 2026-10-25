@@ -350,3 +350,57 @@ def test_menu_size_and_callback_limits():
             for row in markup["inline_keyboard"]
             for b in row
         )
+
+
+@pytest.mark.parametrize("value", ["JPY", "GBP", "BRL"])
+async def test_custom_currency_pending_input(handler, value):
+    await handler.handle(callback("filters:currency:Other"))
+    assert (await handler.pending.get(123)).action == "filters:custom_currency"
+    await handler.handle_input(message(value))
+    handler.service.update_currency.assert_awaited_once_with(7, value)
+    assert await handler.pending.get(123) is None
+
+
+async def test_countries_editor_pending_and_clear(handler):
+    handler.service.update_countries.return_value = await handler.service.get_filters(7)
+    await handler.handle(callback("filters:countries:add"))
+    assert (await handler.pending.get(123)).action == "filters:countries"
+    await handler.handle_input(message("Uruguay, Spain, Canada"))
+    handler.service.update_countries.assert_awaited_with(
+        7, "add", "Uruguay, Spain, Canada"
+    )
+    assert await handler.pending.get(123) is None
+    await handler.handle(callback("filters:countries:clear"))
+    handler.service.update_countries.assert_awaited_with(7, "clear")
+
+
+async def test_invalid_custom_currency_keeps_pending_for_retry(handler):
+    from src.i18n import LocalizedValidationError
+
+    await handler.handle(callback("filters:currency:Other"))
+    handler.service.update_currency.side_effect = LocalizedValidationError(
+        "error.currency"
+    )
+    await handler.handle_input(message("DOLLAR"))
+    assert (await handler.pending.get(123)).action == "filters:custom_currency"
+    assert "Invalid currency" in handler.client.edit_message_text.call_args.args[2]
+
+
+@pytest.mark.parametrize("language", [Language.EN, Language.ES])
+def test_global_region_and_currency_menu_options(handler, language):
+    from src.schemas.filters import UserFilterDTO
+
+    _, regions = render_screen(UserFilterDTO(), "regions", language)
+    data = {item["callback_data"] for row in regions["inline_keyboard"] for item in row}
+    assert "filters:countries" in data
+    assert "filters:regions:uruguay" not in data
+    _, currency = render_screen(UserFilterDTO(), "currency", language)
+    data = {
+        item["callback_data"] for row in currency["inline_keyboard"] for item in row
+    }
+    assert {
+        "filters:currency:GBP",
+        "filters:currency:BRL",
+        "filters:currency:Other",
+        "filters:currency:Any",
+    } <= data

@@ -1,5 +1,13 @@
 # Jooble collector
 
+Current policy: ten profession-neutral queries rotate through Redis state.
+Default one request per cycle; at most the existing configured 1–3 requests per
+cycle. Scheduled and manual collection share the source lock and rotation.
+See [the current follow-up report](universal-rotation-report.md).
+
+The live observations and software/developer query details below are historical.
+The intermediate single `jobs` query has been superseded by rotation.
+
 ## Verified contract and authentication
 
 Verified October 16, 2026 against the [official REST API documentation](https://help.jooble.org/en/support/solutions/articles/60001448238-rest-api-documentation),

@@ -185,8 +185,9 @@ converted to text; scripts, styles and image markup are omitted. Publication
 and collection dates are UTC-aware. Missing salary, experience and timezone
 fields remain None. WWR's remote-only feed supplies remote=True.
 
-Only explicit technical skills/categories populate technologies; no description
-NLP is used. Nontechnical categories are excluded. Explicit country lists take
+Only explicit skill/category tags populate the legacy `technologies` field; no
+description NLP is used. The source taxonomy is mostly technical, so tags can be
+sparse for nontechnical listings; this does not filter those jobs. Explicit country lists take
 precedence over generic Anywhere in the World labels. Headquarters/state fields
 are not treated as work eligibility. Unknown regions remain empty. The existing
 normalizer, fingerprint, filters and scoring are unchanged.
@@ -208,17 +209,16 @@ deduplication examples, test results and Git state.
 ## Get on Board
 
 Get on Board provides an [official public API without authentication](https://www.getonbrd.com/user-manual/get-on-board-s-api).
-The collector reads the documented programming category endpoint:
-https://www.getonbrd.com/api/v0/categories/programming/jobs.
-The [OpenAPI reference](https://www.getonbrd.com/api-doc.html) documents public
-category resources, pagination and expanded relationships.
+The collector reads the documented public search endpoint
+`https://www.getonbrd.com/api/v0/search/jobs?remote=true`, without a keyword,
+country or category restriction. The [OpenAPI reference](https://www.getonbrd.com/api-doc.html)
+documents remote search, pagination and expanded relationships.
 
 GetOnBoardCollector(timeout=20, max_pages=2, per_page=50).collect() returns
 list[JobDTO]. parse_job(raw, collected_at=...) and parse_page(payload) separate
-mapping from HTTP. The default scope is the first two Programming pages, at most
-100 records before repeated-ID deduplication. This does not cover every category
-or guarantee all recently posted jobs: the API has no documented chronological
-ordering/cursor contract for this endpoint. No date cutoff is assumed. Configuration
+mapping from HTTP. The default scope is the first two remote search pages, at most
+100 records before repeated-ID deduplication. This does not guarantee every
+recent job: the API has no documented chronological ordering/cursor contract. No date cutoff is assumed. Configuration
 is bounded to 1..5 pages and 1..120 records/page; pages are requested sequentially,
 with a one-second pause between them. Empty, last, short (without metadata), and
 repeated pages stop traversal. A later-page HTTP failure fails the whole fetch.
@@ -336,13 +336,20 @@ The selected initial market is the US: local configuration and `.env.example`
 use `JOOBLE_API_DOMAIN=jooble.org` and `JOOBLE_SEARCH_LOCATION=United States`.
 Settings require explicit configuration; there is no multi-market key manager.
 
-Global queries are software and developer. Defaults request one page of 20
-results per query and return at most 40 unique jobs per run. Set
-`JOOBLE_MAX_PAGES_PER_QUERY` (1–3) and `JOOBLE_MAX_JOBS_PER_RUN` (1–200) when
-needed. Pages are interleaved by query and repeated IDs are removed before
-persistence. Free API access has a **500-request lifetime quota per key**;
-scheduled defaults consume at most four requests/day, excluding manual runs and
-error retries. Provider-specific additional limits must be confirmed for the key.
+The collector rotates through engineering, design, product, sales, marketing,
+customer support, finance, operations, human resources and data. Redis INCR
+persists a market-specific rotation index under the existing collector lock.
+Manual /collect and scheduled tasks use the same policy. The current request
+ceiling is preserved: `JOOBLE_MAX_PAGES_PER_QUERY` (1–3) also bounds the total
+requests per cycle. With the default of 1, each cycle queries the next profession;
+with a budget of 2 or 3, up to two professions share the same total request cap.
+The third request, if allowed and needed, paginates the first profession. No
+unstarted query consumes a rotation slot when the job cap is reached. Set
+`JOOBLE_MAX_JOBS_PER_RUN` (1–200) to bound returned jobs. Repeated IDs are removed before persistence. Free API access has a
+**500-request lifetime quota per key**; scheduled defaults consume at most two
+requests/day, excluding manual runs and error retries. Provider-specific
+additional limits must be confirmed for the key. The selected market and location
+still limit coverage; API behavior for a broad keyword may vary by market.
 
 The API has no documented remote filter or structured skills/timezone/seniority
 fields. Only exact obvious remote location labels set remote=True. Cities and
@@ -370,8 +377,9 @@ Search uses `GET https://data.usajobs.gov/api/Search` with Host, User-Agent (ema
 and Authorization-Key headers. Missing credentials fail before HTTP and show
 configuration required in `/status`. Key/email values and bodies are not logged.
 
-The global search uses IT series 2210, RemoteIndicator=True, DatePosted=30,
-newest opening dates first and Fields=Full. Defaults fetch at most two pages of
+The search omits JobCategoryCode and uses RemoteIndicator=True, DatePosted=30,
+newest opening dates first and Fields=Full, so it is not limited to the IT series.
+Results remain restricted to U.S. federal jobs and remote eligibility. Defaults fetch at most two pages of
 50 results and return at most 100 unique control numbers per run. Configure
 `USAJOBS_MAX_PAGES_PER_QUERY` (1–5) and `USAJOBS_MAX_JOBS_PER_RUN` (1–500).
 Pagination is bounded and stops on short/exhausted/repeated pages. API requests
@@ -439,13 +447,15 @@ Candidates fall within `DIGEST_JOB_MAX_AGE_DAYS` (default 7) by `collected_at`,
 exclude future timestamps, and have either no notification or a `retryable`
 notification whose cooldown has elapsed. SQL selects at most
 `DIGEST_CANDIDATE_LIMIT` (default 1000), newest first with job ID as a tie-breaker.
-Jobs omitted by a previous limit remain eligible only within this age window. Every candidate passes the existing `FilterService`
-and `ScoringService`. Results sort by score descending, then job ID for ties;
-effective threshold and maximum count determine the selection. Scoring weights
-are unchanged. Each digest loads that user's persisted `UserFilterDTO` through
-`UserFilterService.get_filters(user_id)`. Missing rows are bootstrapped once;
-existing filters are never replaced by a shared profile. The legacy Python
-profile is used only to initialize the configured owner's missing filter row.
+Jobs omitted by a previous limit remain eligible only within this age window.
+Every candidate passes the existing `FilterService` and `ScoringService`; all
+score signals are relative to the recipient's filters and notification timezone.
+Profession, source, named skill and region have no global weights. Results sort
+by score descending, then job ID for ties; effective threshold and maximum count
+determine the selection. Each digest loads that user's persisted `UserFilterDTO`
+through `UserFilterService.get_filters(user_id)`. Missing rows are bootstrapped
+once; existing filters are never replaced by a shared profile. No owner-specific
+profile is applied to a missing row.
 
 Before any Telegram request, the service commits a `digest_runs` reservation
 with a partial **UNIQUE(user_id, local_date) WHERE status <> 'abandoned' AND NOT manual**
@@ -645,9 +655,11 @@ Trial/Premium/Free plan. An active trial also shows its end date in the user's
 local timezone. Only the owner sees /collect, /digest and /stats in the admin section
 of /help; these commands are excluded from the public BotFather menu.
 
-- Timezones: America/Montevideo, America/Sao_Paulo,
-  America/Argentina/Buenos_Aires, America/New_York, America/Los_Angeles,
-  Europe/London, Europe/Madrid, UTC. Available on every plan.
+- Timezones: global presets across the Americas, Europe, Asia, Africa and Oceania,
+  plus UTC and Other / Custom timezone. Custom IANA input is validated by ZoneInfo,
+  for example Europe/Berlin, Asia/Tokyo or America/Mexico_City. Available on every plan.
+  Telegram language/location is never used to infer timezone; the application
+  timezone is a temporary fallback until a user changes it.
 - Local digest times: 07:00, 08:00, 09:00, 10:00, 12:00, 18:00, 20:00.
 - Minimum scores: 50, 60, 70, 75, 80, 85, 90 percent.
 
@@ -664,7 +676,8 @@ settings:time, settings:score, settings:back, settings:close, tz:<IANA name>,
 time:<HHMM>, and score:<integer>. All offered values fit Telegram's 64-byte limit.
 Every settings callback with a valid query ID is acknowledged, including invalid
 selections and denied requests. Existing save/reject callbacks keep their own
-handler. Free text is not accepted for settings.
+handler. Custom timezone text uses the shared expiring pending-input store;
+/cancel or navigating away clears it. Invalid input keeps the prompt for retry.
 
 NotificationSettingsService exposes get(user_id), update_timezone(user_id, value),
 update_digest_time(user_id, value), and update_min_score(user_id, value).
@@ -758,16 +771,16 @@ before implementation.
 `users.id`, PostgreSQL string arrays, nullable minimum salary/currency, remote
 and US-only flags, and timezone tolerance. Notification timezone remains in
 `user_notification_settings`; the DTO mapper reads it on every request and
-sets the four legacy region booleans from `allowed_regions` so disabled regions
-cannot be re-enabled by DTO defaults. Scoring weights and notification
-reservations are unchanged.
+uses `allowed_regions` as the only region preference. Legacy DTO region flags
+have been removed; they were never stored as ORM columns. Scoring remains recipient-relative; the
+scheduler timezone default is operational context, not a global bonus.
 
-New users get empty technology/keyword/blacklist/employment/experience lists,
-Worldwide/LATAM/South America/Uruguay, all active sources, Remote only and
-Exclude US-only enabled, tolerance ±2h, and no salary/currency restriction. The
-configured owner's missing row retains required Python and preferred FastAPI,
-PostgreSQL, Redis, Celery and Docker. This lazy bootstrap runs only for missing
-rows; reset deliberately restores the generic new-user profile. Existing user
+New users get empty skill/keyword/blacklist/employment/experience lists,
+region preference [worldwide] (an existing empty list still means any region),
+the eight default sources (USAJOBS
+is opt-in), Remote only enabled, Exclude US-only disabled, tolerance ±2h, and no salary/currency restriction. No
+owner-specific profession or region profile is bootstrapped. This lazy bootstrap
+runs only for missing rows; reset deliberately restores neutral defaults. Existing user
 bootstrap/onboarding is unchanged: first /filters or digest creates filters for
 an active persisted user. /start now creates a minimal profile with the selected
 initial language and missing-only notification/trial defaults.
@@ -778,7 +791,7 @@ commit/rollback. It locks the parent user for bootstrap and read-modify-write
 operations to prevent duplicate creation and lost concurrent list changes.
 Services must use sessions without unrelated pending writes.
 
-/filters opens Keywords, Required/Preferred/Excluded tech, Regions, Employment,
+/filters opens Keywords, Required/Preferred/Excluded skills, Regions, Employment,
 Experience, Salary, Sources, Blacklist, Timezone tolerance and confirmed Reset.
 Callbacks use only `filters:`. Navigation and updates edit the existing message.
 Lists support Add/Remove/Clear with comma-separated input, lowercase storage,
@@ -789,15 +802,20 @@ any supplied word; required technologies must all match. Blacklisted companies
 use exact case-insensitive comparison. Lists accept at most 50 entries of
 100 characters each.
 
-Regions include Worldwide, LATAM, South America, Uruguay, Americas,
-North America, Europe, EU, EMEA and APAC, with Remote only and Exclude US-only
-toggles. No enabled regions excludes jobs with known regions, preserving the
-existing filter policy. Empty employment/experience selections mean Any.
+Region options include Worldwide, Americas, North America, Latin America,
+South America, Europe, EU, EMEA, APAC, Asia, Africa and Oceania, with Remote only
+and Exclude US-only toggles. Specific countries opens an Add/Remove/Clear editor;
+country names and ISO codes such as `Uruguay, Spain, Canada` or `UY, ES, CA` are
+validated against bundled ISO data. Countries share the existing allowed_regions
+array. Region matching uses CLDR membership; Uruguay has no privileged rule. No selected region means there is no region restriction; worldwide jobs
+are compatible with any selected region. Empty employment/experience selections
+mean Any.
 Salary accepts only a nonnegative whole number within PostgreSQL INTEGER range;
-USD/EUR/UYU or Any currency are available, without conversion. Clear removes
+USD/EUR/GBP/CAD/AUD/BRL/MXN/UYU presets, Other (any three-letter ASCII code),
+and Any currency are available, without conversion. Clear removes
 the amount and keeps the selected currency. Unknown salary/region/employment/
 experience metadata retains the existing filter behavior. At least one of
-Remote OK, We Work Remotely and Get on Board must remain enabled. Tolerance
+the nine available sources must remain enabled. USAJOBS starts disabled. Tolerance
 ranges from ±0h to ±4h; timezone itself stays in /settings. All job filters are
 available on Free/Trial/Premium; custom digest time and score retain their
 existing entitlement rules.
@@ -1054,3 +1072,6 @@ server and require a deliberate cleanup if a later version removes modules.
 Run only one Beat instance and one poller for the token. Stop local bot processes
 before activating the VPS. Do not use `docker compose down -v`. Back up PostgreSQL
 and the server `.env` securely before future schema/deployment changes.
+
+See [the universal matching report](universal-matching-report.md) for the collector
+audit, request budgets, compatibility details, five-profile validation and checks.

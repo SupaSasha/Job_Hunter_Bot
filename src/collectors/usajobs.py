@@ -21,7 +21,7 @@ from src.schemas.job import JobDTO
 
 logger = logging.getLogger(__name__)
 SEARCH_URL = "https://data.usajobs.gov/api/Search"
-USAJOBS_CATEGORIES = ("2210",)  # Official Information Technology Management series.
+USAJOBS_SEARCHES = ("remote",)
 REMOTE_LOCATION = "anywhere in the u.s. (remote job)"
 REMOTE_US_LOCATIONS = {REMOTE_LOCATION, f"{REMOTE_LOCATION}, united states"}
 EASTERN = ZoneInfo("America/New_York")
@@ -272,7 +272,7 @@ class USAJobsCollector(BaseJobCollector):
     source_name = "usajobs"
     page_size = 50
     max_response_bytes = 8 * 1024 * 1024
-    categories = USAJOBS_CATEGORIES
+    searches = USAJOBS_SEARCHES
 
     def __init__(
         self,
@@ -300,7 +300,7 @@ class USAJobsCollector(BaseJobCollector):
 
     async def collect(self) -> list[JobDTO]:
         self.last_report = {}
-        self.query_job_ids = {category: [] for category in self.categories}
+        self.query_job_ids = {query: [] for query in self.searches}
         for name, value in (
             ("USAJOBS_API_KEY", self._api_key),
             ("USAJOBS_EMAIL", self._email),
@@ -322,8 +322,8 @@ class USAJobsCollector(BaseJobCollector):
         }
         jobs, seen, finished = [], set(), set()
         counters = {
-            category: {
-                "category": category,
+            query: {
+                "query": query,
                 "requests": 0,
                 "received": 0,
                 "unique": 0,
@@ -332,27 +332,26 @@ class USAJobsCollector(BaseJobCollector):
                 "closed": 0,
                 "invalid": 0,
             }
-            for category in self.categories
+            for query in self.searches
         }
         async with httpx.AsyncClient(
             timeout=self.timeout, headers=headers, follow_redirects=False
         ) as client:
             requests = 0
             for page in range(1, self.max_pages + 1):
-                for category in self.categories:
-                    if category in finished or len(jobs) >= self.max_jobs:
+                for query in self.searches:
+                    if query in finished or len(jobs) >= self.max_jobs:
                         continue
                     if requests:
                         await asyncio.sleep(1)
                     requests += 1
-                    counters[category]["requests"] += 1
+                    counters[query]["requests"] += 1
                     try:
                         payload = await fetch_json(
                             client,
                             SEARCH_URL,
                             source="USAJOBS",
                             params={
-                                "JobCategoryCode": category,
                                 "RemoteIndicator": "True",
                                 "DatePosted": 30,
                                 "SortField": "opendate",
@@ -371,15 +370,15 @@ class USAJobsCollector(BaseJobCollector):
                             ) from None
                         raise
                     batch, total, audit = parse_page(payload)
-                    row = counters[category]
+                    row = counters[query]
                     for field, value in audit.items():
                         row[field] += value
-                    prior = len(self.query_job_ids[category])
-                    query_seen = set(self.query_job_ids[category])
+                    prior = len(self.query_job_ids[query])
+                    query_seen = set(self.query_job_ids[query])
                     for job in batch:
                         if job.external_id not in query_seen:
                             query_seen.add(job.external_id)
-                            self.query_job_ids[category].append(job.external_id)
+                            self.query_job_ids[query].append(job.external_id)
                             row["remote"] += int(job.remote)
                         if job.external_id not in seen and len(jobs) < self.max_jobs:
                             seen.add(job.external_id)
@@ -390,7 +389,7 @@ class USAJobsCollector(BaseJobCollector):
                         or page * self.page_size >= total
                         or (len(query_seen) == prior and not audit["closed"])
                     ):
-                        finished.add(category)
+                        finished.add(query)
         self.last_report = {
             "queries": list(counters.values()),
             "queries_executed": sum(row["requests"] > 0 for row in counters.values()),

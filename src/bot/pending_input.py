@@ -10,6 +10,9 @@ INPUT_ACTIONS = {
     "filters:min_salary",
     "filters:blacklist_words",
     "filters:blacklist_companies",
+    "filters:countries",
+    "filters:custom_currency",
+    "settings:timezone",
 }
 
 

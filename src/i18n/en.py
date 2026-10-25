@@ -109,12 +109,12 @@ EN = {
     "filters.tolerance": "Timezone tolerance: ±{hours}h",
     "filters.any_selections": "No selections means Any.",
     "filters.regions_help": (
-        "Select allowed regions. With no selections, jobs with a known "
-        "region are excluded."
+        "Select allowed regions. With no selections, any region is allowed. "
+        "Worldwide jobs are compatible with every region."
     ),
     "filters.source_minimum": "At least one source must be enabled.",
     "filters.salary_screen": (
-        "Minimum salary\n\nCurrent:\n{salary}\n\nNo currency conversion is " "applied."
+        "Minimum salary\n\nCurrent:\n{salary}\n\nNo currency conversion is applied."
     ),
     "filters.set_amount": "Set amount",
     "filters.currency": "Currency",
@@ -129,15 +129,15 @@ EN = {
     "input.salary": "Send a whole number without currency symbols.\n\nExample:\n2500",
     "input.add_keywords": "Send keywords separated by commas.",
     "input.remove_keywords": "Send keywords to remove separated by commas.",
-    "input.add_tech": "Send technologies separated by commas.",
-    "input.remove_tech": "Send technologies to remove separated by commas.",
+    "input.add_tech": "Enter skills separated by commas.",
+    "input.remove_tech": "Send skills or tags to remove separated by commas.",
     "input.add_words": "Send blacklisted words separated by commas.",
     "input.remove_words": "Send blacklisted words to remove separated by commas.",
     "input.add_companies": "Send blacklisted companies separated by commas.",
     "input.remove_companies": (
         "Send blacklisted companies to remove separated by commas."
     ),
-    "input.keywords_example": "\n\nExample:\npython, backend, api",
+    "input.keywords_example": "\n\nExample:\naccountant, sales, designer, python",
     "input.expiry": "\n\nUse /cancel to cancel. Input expires in 10 minutes.",
     "input.retry": "{error}\n\nTry again, or use /cancel.",
     "error.invalid_list": "Invalid list input.",
@@ -145,13 +145,11 @@ EN = {
     "error.list_size": "Use at most 50 values, each up to 100 characters.",
     "error.list_limit": "Use at most 50 values.",
     "error.list_action": "Invalid list action.",
-    "error.tech_conflict": (
-        "Remove these technologies from excluded technologies first."
-    ),
+    "error.tech_conflict": "Remove these skills from excluded skills first.",
     "error.filter_option": "Invalid filter option.",
     "error.filter_screen": "Invalid filter screen.",
     "error.salary": (
-        "Send a whole number from 0 to 2147483647, without currency " "symbols."
+        "Send a whole number from 0 to 2147483647, without currency symbols."
     ),
     "error.currency": "Invalid currency.",
     "error.tolerance": "Timezone tolerance must be between 0 and 4 hours.",
@@ -171,8 +169,8 @@ EN = {
     "job.region_missing": "Region not specified",
     "job.employment": "Employment",
     "job.employment_missing": "Employment type not specified",
-    "job.technologies": "Technologies",
-    "job.technologies_missing": "Technologies not specified",
+    "job.technologies": "Skills",
+    "job.technologies_missing": "Skills not specified",
     "job.experience": "Experience",
     "job.source": "Source",
     "job.matches": "Matches",
@@ -188,29 +186,39 @@ EN = {
     "feedback.saved": "Job saved",
     "feedback.rejected": "Marked as not suitable",
     "score.base": "Base score: +50",
-    "score.preferred": "Preferred technology {technology}: {points}",
-    "score.keyword": "Keyword: {keyword}: +3",
-    "score.region": "{region} region: {points}",
-    "score.timezone_compatible": "Timezone compatible: +10",
-    "score.timezone_distance": "Timezone distance: {distance} hours: {points}",
-    "score.timezone_far": "Timezone distance: 5+ hours: -20",
+    "score.preferred": "Preferred skills matched ({matched}): +{points}",
+    "score.required": "Required skills matched ({matched}): +{points}",
+    "score.keyword": "Keywords matched ({matched}): +{points}",
+    "score.region": "Region matches user preferences: +{points}",
+    "score.timezone_compatible": "Timezone compatible: +{points}",
+    "score.timezone_distance": "Timezone within {distance} hours: +{points}",
+    "score.timezone_no_adjustment": (
+        "Timezone difference: {distance} hours: no adjustment"
+    ),
+    "score.timezone_far": "Timezone differs by {distance} hours: {points}",
     "score.region_penalty": "Region is not specified: -2",
     "score.region_unknown": "Remote region is unknown",
     "score.timezone_penalty": "Timezone is not specified: -2",
     "score.timezone_missing": "Timezone is not specified",
+    "score.experience_unknown": "Experience level is unknown: -2",
     "score.experience_missing": "Experience level is not specified",
-    "score.level": "{level} level: {points}",
-    "score.title_seniority": "Title seniority: {level}: {points}",
-    "score.years": "Requires {years}+ years of experience: {points}",
+    "score.experience_match": "Experience matches user preferences: +{points}",
+    "score.experience_mismatch": (
+        "Inferred experience differs from user preferences: {points}"
+    ),
     "score.salary_penalty": "Salary is not specified: -2",
     "score.salary_missing": "Salary is not specified",
+    "score.salary_currency_unknown": "Salary currency is unknown: -2",
+    "score.salary_currency_missing": "Salary currency is not specified",
+    "score.salary_match": "Salary meets user minimum: +{points}",
+    "score.employment_unknown": "Employment type is unknown: -2",
     "score.employment_missing": "Employment type is not specified",
-    "score.full_time": "Full-time: +3",
-    "score.remote": "Remote: +10",
+    "score.employment_match": "Employment matches user preferences: +{points}",
+    "score.remote_match": "Remote matches user preference: +{points}",
     "label.keywords": "Keywords",
-    "label.required_technologies": "Required technologies",
-    "label.preferred_technologies": "Preferred technologies",
-    "label.excluded_technologies": "Excluded technologies",
+    "label.required_technologies": "Required skills",
+    "label.preferred_technologies": "Preferred skills",
+    "label.excluded_technologies": "Excluded skills",
     "label.blacklisted_words": "Blacklisted words",
     "label.blacklisted_companies": "Blacklisted companies",
     "label.allowed_regions": "Regions",
@@ -233,7 +241,7 @@ EN = {
     "label.architect": "Architect",
     "label.engineering manager": "Engineering Manager",
     "label.worldwide": "Worldwide",
-    "label.latam": "LATAM",
+    "label.latam": "Latin America",
     "label.south_america": "South America",
     "label.uruguay": "Uruguay",
     "label.americas": "Americas",
@@ -266,9 +274,9 @@ EN = {
     "status.expired": "expired",
     "status.trial": "trial",
     "filters.button_keywords": "🔎 Keywords",
-    "filters.button_reqtech": "🧰 Required tech",
-    "filters.button_preftech": "⭐ Preferred tech",
-    "filters.button_extech": "🚫 Excluded tech",
+    "filters.button_reqtech": "🧰 Required skills",
+    "filters.button_preftech": "⭐ Preferred skills",
+    "filters.button_extech": "🚫 Excluded skills",
     "filters.button_regions": "🌎 Regions",
     "filters.button_employment": "💼 Employment",
     "filters.button_experience": "📈 Experience",
@@ -278,4 +286,40 @@ EN = {
     "filters.button_tz_tol": "🕐 Timezone tolerance",
     "filters.button_reset": "Reset filters",
     "filters.minimum_salary": "Minimum salary",
+    "common.other": "Other",
+    "filters.countries": "Specific countries",
+    "input.countries": (
+        "Send country names or ISO codes separated by commas.\n"
+        "\n"
+        "Example:\n"
+        "Uruguay, Spain, Canada\n"
+        "UY, ES, CA"
+    ),
+    "input.currency": (
+        "Send a 3-letter currency code.\n" "\n" "Examples: JPY, CHF, NZD, COP, ARS"
+    ),
+    "input.timezone": (
+        "Send an IANA timezone.\n"
+        "\n"
+        "Examples:\n"
+        "Europe/Berlin\n"
+        "Asia/Tokyo\n"
+        "America/Mexico_City"
+    ),
+    "input.skills_example": (
+        "\n"
+        "\n"
+        "Examples:\n"
+        "Python, FastAPI\n"
+        "Figma, UX Research\n"
+        "Salesforce, B2B Sales\n"
+        "Excel, Accounting"
+    ),
+    "settings.custom_timezone": "Other / Custom timezone",
+    "error.country": (
+        "Unknown country. Use a country name or ISO code, for " "example Spain or ES."
+    ),
+    "label.asia": "Asia",
+    "label.africa": "Africa",
+    "label.oceania": "Oceania",
 }

@@ -159,7 +159,7 @@ def parse_page(payload: dict) -> tuple[list[JobDTO], int | None]:
 
 class GetOnBoardCollector(BaseJobCollector):
     source_name = "getonboard"
-    api_url = "https://www.getonbrd.com/api/v0/categories/programming/jobs"
+    api_url = "https://www.getonbrd.com/api/v0/search/jobs"
     max_pages = 2
     max_response_bytes = 8 * 1024 * 1024
     expansions = (
@@ -194,6 +194,7 @@ class GetOnBoardCollector(BaseJobCollector):
             ) as client:
                 for page in range(1, self.max_pages + 1):
                     params = [
+                        ("remote", "true"),
                         ("page", str(page)),
                         ("per_page", str(self.per_page)),
                         ("lang", "en"),

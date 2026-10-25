@@ -35,5 +35,8 @@ async def route_update(
         text = message.get("text")
         if isinstance(text, str) and text.startswith("/"):
             await commands.handle(message)
-        elif isinstance(text, str) and filters is not None:
-            await filters.handle_input(message)
+        elif isinstance(text, str):
+            if settings is not None and await settings.handle_input(message):
+                return
+            if filters is not None:
+                await filters.handle_input(message)

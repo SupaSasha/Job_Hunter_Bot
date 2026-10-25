@@ -1,5 +1,7 @@
 # We Work Remotely stage report
 
+> October 25, 2026 update: Structured skills are now preserved without a technical whitelist. Profession category labels are kept separate from skills. See [universal matching report](universal-matching-report.md). Earlier live-run details below are historical.
+
 ## Data source and scope
 
 The integration uses the official public RSS endpoint:

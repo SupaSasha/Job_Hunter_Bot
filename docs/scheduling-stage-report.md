@@ -6,6 +6,10 @@ No commit or push was performed during this implementation stage.
 The `.env` file was not modified. The checks and Git snapshots below describe
 the state at the end of that stage.
 
+> Historical profile note: the owner-oriented Python/LATAM bootstrap documented
+> in the original stage was removed on October 25, 2026. Saved user filters are
+> preserved; new filter rows use neutral defaults.
+
 ## Dependencies and infrastructure
 
 - Celery 5.6.3: `celery >=5.6.3,<6.0.0`.
@@ -102,7 +106,8 @@ configured time, depending on queue load.
 
 ```python
 await DailyDigestService(sessions, client, entitlements).send(
-    user_id, expected_date=None,
+    user_id,
+    expected_date=None,
 )
 ```
 

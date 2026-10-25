@@ -175,8 +175,15 @@ def test_only_explicit_workplace_and_regions(raw, marker, remote, regions):
     "text,expected",
     [
         ("Acme | Senior Backend Engineer | Remote", "Senior Backend Engineer"),
+        ("Acme | Sales Manager | Remote", "Sales Manager"),
+        ("Acme | UX Designer | Remote", "UX Designer"),
+        ("Acme | Accountant | Remote", "Accountant"),
+        ("Acme | Customer Support Specialist | Remote", "Customer Support Specialist"),
+        ("Acme | Marketing Specialist | Remote", "Marketing Specialist"),
+        ("Acme | Recruiter | Remote", "Recruiter"),
+        ("Acme | Data Analyst | Remote", "Data Analyst"),
         ("Acme | Remote<p>Mid Backend Engineer", "Mid Backend Engineer"),
-        ("Acme | Remote | Python", "Job opening"),
+        ("Acme | Remote | Python", "Multiple roles"),
         ("Acme | Backend Engineer, Product Designer | Remote", "Multiple roles"),
         (
             "Acme | Remote<p>We are hiring:<ul><li>Backend Engineer</li>"
@@ -212,9 +219,9 @@ def test_company_parentheses_preserved_and_urls_not_company_identity(raw):
     "level,expected",
     [
         ("Senior", "senior"),
-        ("Mid", "middle"),
+        ("Mid", None),
         ("Junior", "junior"),
-        ("Staff", "staff"),
+        ("Staff", None),
         ("Lead", "lead"),
         ("Principal", "principal"),
     ],
@@ -521,3 +528,68 @@ def test_shared_i18n_filters_and_attribution_source_neutral_score(raw, language)
         for row in markup["inline_keyboard"]
         for button in row
     )
+
+
+@pytest.mark.parametrize(
+    "role",
+    [
+        "Account Executive",
+        "Business Development",
+        "Marketing",
+        "Marketing Manager",
+        "Growth",
+        "Customer Support",
+        "Customer Success Manager",
+        "Recruiter",
+        "Talent Acquisition",
+        "HR",
+        "Operations",
+        "Operations Manager",
+        "Finance",
+        "Accountant",
+        "Legal",
+        "Project Manager",
+        "Product Manager",
+        "Designer",
+        "Copywriter",
+        "Content",
+        "Data Analyst",
+        "Analyst",
+        "Consultant",
+    ],
+)
+def test_generic_hiring_titles(raw, role):
+    parsed = job(raw, f"Acme | Remote | {role}")
+    assert parsed is not None and parsed.remote
+    assert parsed.title == role
+
+
+def test_unknown_profession_hiring_fallback_and_nontech_skills(raw):
+    parsed = job(
+        raw,
+        "Acme | Remote | Ornithologist<p>We are hiring. "
+        "Excel, Salesforce, Figma, UX Research and Accounting.",
+    )
+    assert parsed is not None and parsed.title == "Ornithologist"
+    assert {"excel", "salesforce", "figma", "ux research", "accounting"} <= set(
+        parsed.technologies
+    )
+
+
+def test_staff_accountant_does_not_inherit_it_seniority(raw):
+    parsed = job(raw, "Acme | Remote | Staff Accountant")
+    assert parsed.title == "Staff Accountant" and parsed.experience_level is None
+
+
+@pytest.mark.parametrize(
+    "text,title",
+    [
+        ("Acme | Remote | Sales | Account Executive", "Account Executive"),
+        ("Company | Remote | Customer Success Manager", "Customer Success Manager"),
+        ("Startup | Remote | Recruiter", "Recruiter"),
+        ("Firm | Remote | Accountant", "Accountant"),
+    ],
+)
+def test_prompt_nontech_hiring_examples(raw, text, title):
+    parsed = job(raw, text)
+    assert parsed is not None and parsed.remote and parsed.title == title

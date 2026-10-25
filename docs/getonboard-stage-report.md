@@ -1,5 +1,7 @@
 # Get on Board stage report
 
+> October 25, 2026 update: Current collection uses the public remote search endpoint `/api/v0/search/jobs?remote=true`, without a keyword, country or programming-category restriction. The two-page budget is unchanged. See [universal matching report](universal-matching-report.md). Earlier live-run details below are historical.
+
 ## Result and data source
 
 Get on Board is connected to the existing JobDTO -> NormalizationService ->

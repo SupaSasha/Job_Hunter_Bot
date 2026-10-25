@@ -110,9 +110,9 @@ async def test_saved_preferences_change_scoring_without_changing_weights(pg):
         after = ScoringService().calculate(
             job, await UserFilterService(session).get_filters(a)
         )
-        assert after.score == before + 7
-        assert "Preferred technology Redis: +4" in after.matched_rules
-        assert "Keyword: backend: +3" in after.matched_rules
+        assert after.score == before + 35
+        assert "Preferred skills matched (1/1): +20" in after.matched_rules
+        assert "Keywords matched (1/1): +15" in after.matched_rules
 
 
 async def seed(pg):
@@ -136,7 +136,9 @@ async def test_filters_bootstrap_and_persist_across_sessions(pg):
     a, b = await seed(pg)
     async with pg() as session:
         service = UserFilterService(session, owner_telegram_id=1001)
-        assert (await service.get_filters(a)).required_technologies == ["python"]
+        assert (await service.get_filters(a)).required_technologies == []
+        assert (await service.get_filters(a)).preferred_technologies == []
+        assert (await service.get_filters(a)).allowed_regions == ["worldwide"]
         assert (await service.get_filters(b)).required_technologies == []
         await service.update_list(a, "required_technologies", "clear")
         await service.update_list(a, "required_technologies", "add", "JS, javascript")
@@ -290,8 +292,9 @@ async def test_digest_two_users_different_saved_filters_and_no_repeat(pg):
     digest = DailyDigestService(
         pg, client, EntitlementService(free_min_score=0), clock=lambda: NOW
     )
-    result_a, result_b = await digest.send(a, run_now=True), await digest.send(
-        b, run_now=True
+    result_a, result_b = (
+        await digest.send(a, run_now=True),
+        await digest.send(b, run_now=True),
     )
     assert result_a["status"] == "sent" and result_a["sent"] == 1
     assert result_b == {"status": "empty", "selected": 0, "sent": 0}
@@ -374,6 +377,9 @@ async def test_local_telegram_scenario_persists_after_polling_restart(pg, fake_r
     await update(data="filters:preftech:add")
     await update(text="fastapi, postgres, redis")
     for data in (
+        "filters:regions:latam",
+        "filters:regions:south_america",
+        "filters:exclude_us_only",
         "filters:experience:junior",
         "filters:experience:middle",
         "filters:employment:full_time",
@@ -382,6 +388,8 @@ async def test_local_telegram_scenario_persists_after_polling_restart(pg, fake_r
         "filters:tz_tol:2",
     ):
         await update(data=data)
+    await update(data="filters:countries:add")
+    await update(text="Uruguay")
     await update(data="filters:min_salary")
     await update(text="$2500")
     assert await pending.get(1001) is not None
@@ -404,7 +412,7 @@ async def test_local_telegram_scenario_persists_after_polling_restart(pg, fake_r
         "Contract",
         "USD 2500",
         "Worldwide",
-        "LATAM",
+        "Latin America",
         "South America",
         "Uruguay",
         "±2h",
@@ -453,3 +461,53 @@ async def test_local_telegram_scenario_persists_after_polling_restart(pg, fake_r
     assert client.send_message.await_count == count + 1
     assert (await digest.send(a, run_now=True))["status"] == "empty"
     assert client.send_message.call_args.args[1] == "No new jobs match your filters."
+
+
+async def test_neutral_default_migration_preserves_saved_personal_profiles(pg):
+    config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
+    async with pg() as session:
+        connection = await session.connection()
+
+        def downgrade(sync_connection):
+            config.attributes["connection"] = sync_connection
+            command.downgrade(config, "e85ab9c12460")
+
+        await connection.run_sync(downgrade)
+        user = UserORM(telegram_id=8181)
+        fresh = UserORM(telegram_id=8282)
+        session.add_all([user, fresh])
+        await session.flush()
+        await session.execute(
+            text(
+                "INSERT INTO user_filters (user_id, keywords, preferred_technologies) "
+                "VALUES (:id, ARRAY['python'], ARRAY['fastapi','uxresearch'])"
+            ),
+            {"id": user.id},
+        )
+        await session.commit()
+        connection = await session.connection()
+
+        def upgrade(sync_connection):
+            config.attributes["connection"] = sync_connection
+            command.upgrade(config, "head")
+            command.check(config)
+
+        await connection.run_sync(upgrade)
+        await session.execute(
+            text("INSERT INTO user_filters (user_id) VALUES (:id)"), {"id": fresh.id}
+        )
+        await session.commit()
+        saved = await UserFilterRepository(session).get_by_user_id(user.id)
+        neutral = await UserFilterRepository(session).get_by_user_id(fresh.id)
+        assert saved.keywords == ["python"]
+        assert saved.preferred_technologies == ["fastapi", "uxresearch"]
+        assert saved.allowed_regions == [
+            "worldwide",
+            "latam",
+            "south_america",
+            "uruguay",
+        ]
+        assert saved.exclude_us_only is True
+        assert neutral.keywords == neutral.preferred_technologies == []
+        assert neutral.allowed_regions == ["worldwide"]
+        assert neutral.exclude_us_only is False

@@ -3,9 +3,11 @@
 import asyncio
 import logging
 from datetime import UTC, datetime
+from hashlib import sha256
 from urllib.parse import quote, urlsplit
 
 import httpx
+from redis.asyncio import Redis
 
 from src.collectors.base import (
     BaseJobCollector,
@@ -18,7 +20,18 @@ from src.collectors.text import html_to_text
 from src.schemas.job import JobDTO
 
 logger = logging.getLogger(__name__)
-JOOBLE_SEARCH_QUERIES = ("software", "developer")
+JOOBLE_SEARCH_QUERIES = (
+    "engineering",
+    "design",
+    "product",
+    "sales",
+    "marketing",
+    "customer support",
+    "finance",
+    "operations",
+    "human resources",
+    "data",
+)
 REMOTE_LOCATIONS = {"remote", "remote job", "work from home"}
 
 
@@ -125,6 +138,7 @@ class JoobleCollector(BaseJobCollector):
         timeout: float | None = None,
         max_pages: int | None = None,
         max_jobs: int | None = None,
+        redis: Redis | None = None,
     ):
         from src.config import settings
 
@@ -132,6 +146,7 @@ class JoobleCollector(BaseJobCollector):
         self._api_key = settings.JOOBLE_API_KEY
         self.api_domain = settings.JOOBLE_API_DOMAIN
         self.location = settings.JOOBLE_SEARCH_LOCATION
+        self.redis = redis
         self.max_pages = (
             settings.JOOBLE_MAX_PAGES_PER_QUERY if max_pages is None else max_pages
         )
@@ -145,9 +160,22 @@ class JoobleCollector(BaseJobCollector):
         self.last_report: dict = {}
         self.query_job_ids: dict[str, list[str]] = {}
 
+    @property
+    def rotation_key(self) -> str:
+        market = sha256((self.location or "").casefold().encode()).hexdigest()[:16]
+        return f"collector:jooble:query_rotation:{self.api_domain}:{market}"
+
+    async def _next_query(self) -> str:
+        if self.redis is None:
+            raise CollectorConfigurationError("Jooble requires Redis rotation state")
+        # Atomic and persistent. The collection service holds the source lock;
+        # only queries actually started consume a rotation slot.
+        position = await self.redis.incr(self.rotation_key)
+        return self.search_queries[(position - 1) % len(self.search_queries)]
+
     async def collect(self) -> list[JobDTO]:
         self.last_report = {}
-        self.query_job_ids = {query: [] for query in self.search_queries}
+        self.query_job_ids = {}
         for name, value in (
             ("JOOBLE_API_KEY", self._api_key),
             ("JOOBLE_API_DOMAIN", self.api_domain),
@@ -155,26 +183,35 @@ class JoobleCollector(BaseJobCollector):
         ):
             if not value:
                 raise CollectorConfigurationError(f"Jooble requires {name}")
+        if self.redis is None:
+            raise CollectorConfigurationError("Jooble requires Redis rotation state")
         url = f"https://{self.api_domain}/api/{quote(self._api_key, safe='')}"
         jobs, seen, finished = [], set(), set()
-        query_seen = {query: set() for query in self.search_queries}
-        counters = {
-            query: {
-                "query": query,
-                "requests": 0,
-                "received": 0,
-                "unique": 0,
-                "contributed": 0,
-            }
-            for query in self.search_queries
-        }
+        query_seen, counters, active_queries = {}, {}, []
+        # Preserve the current single-query request budget, even though the
+        # vocabulary now has ten professions. Never run ten searches per cycle.
+        request_budget = self.max_pages
+        query_slots = min(2, request_budget)
         async with httpx.AsyncClient(
             timeout=self.timeout, headers=self.request_headers, follow_redirects=False
         ) as client:
             # Round-robin pages keep the first query from monopolizing the run cap.
             requests = 0
             for page in range(1, self.max_pages + 1):
-                for query in self.search_queries:
+                for slot in range(query_slots):
+                    if requests >= request_budget or len(jobs) >= self.max_jobs:
+                        break
+                    if slot >= len(active_queries):
+                        if page != 1:
+                            continue
+                        query = await self._next_query()
+                        active_queries.append(query)
+                        query_seen[query] = set()
+                        self.query_job_ids[query] = []
+                        counters[query] = dict(
+                            query=query, requests=0, received=0, unique=0, contributed=0
+                        )
+                    query = active_queries[slot]
                     if query in finished or len(jobs) >= self.max_jobs:
                         continue
                     if requests:

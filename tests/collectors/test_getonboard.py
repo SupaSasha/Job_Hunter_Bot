@@ -115,10 +115,7 @@ def test_latam_regions_pass_existing_normalizer_and_eligibility(region, expected
             UserFilterDTO(
                 remote_only=True,
                 required_technologies=["python"],
-                latam_allowed=True,
-                south_america_allowed=True,
-                worldwide_allowed=True,
-                uruguay_allowed=True,
+                allowed_regions=["worldwide"],
             ),
         )
         .accepted
@@ -330,3 +327,11 @@ async def test_invalid_json_and_size_limit(transport, monkeypatch):
 def test_invalid_pagination_configuration(options):
     with pytest.raises(ValueError):
         GetOnBoardCollector(**options)
+
+
+def test_collector_uses_profession_neutral_remote_search():
+    assert GetOnBoardCollector.api_url == "https://www.getonbrd.com/api/v0/search/jobs"
+    raw = raw_job()
+    raw["attributes"]["title"] = "Accountant"
+    raw["attributes"]["tags"] = relation("Excel")
+    assert NormalizationService().normalize(parse_job(raw)).technologies == ["excel"]

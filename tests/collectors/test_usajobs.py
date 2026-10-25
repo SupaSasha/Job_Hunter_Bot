@@ -78,7 +78,10 @@ def test_eligibility_uses_existing_filters_and_no_source_scoring_bonus(rows):
     from src.services.scoring import ScoringService
 
     job = parse_job(rows[0], collected_at=NOW)
-    filters = UserFilterDTO(sources=["usajobs"], allowed_regions=["us_only"])
+    assert job is not None
+    filters = UserFilterDTO(
+        sources=["usajobs"], allowed_regions=["us_only"], exclude_us_only=True
+    )
     result = FilterService().evaluate(job, filters)
     assert not result.accepted and "US-only vacancy" in result.reasons
     filters.exclude_us_only = False
@@ -184,7 +187,9 @@ def test_live_us_location_still_excluded_when_user_opts_in(rows):
     d["UserArea"]["Details"].update(WhoMayApply={}, KeyRequirements=[])
     job = parse_job(raw, collected_at=NOW)
     assert job.remote and job.remote_regions == ["us_only"]
-    result = FilterService().evaluate(job, UserFilterDTO(sources=["usajobs"]))
+    result = FilterService().evaluate(
+        job, UserFilterDTO(sources=["usajobs"], exclude_us_only=True)
+    )
     assert not result.accepted and "US-only vacancy" in result.reasons
 
 
@@ -386,7 +391,6 @@ async def test_headers_official_filters_bounded_request_and_secret_logs(
         assert request.headers["User-Agent"] == "private-test@example.com"
         assert request.headers["Authorization-Key"] == "usa-private-test-key"
         assert dict(request.url.params) == {
-            "JobCategoryCode": "2210",
             "RemoteIndicator": "True",
             "DatePosted": "30",
             "SortField": "opendate",
@@ -415,15 +419,13 @@ async def test_headers_official_filters_bounded_request_and_secret_logs(
     ) and settings.USAJOBS_EMAIL not in repr(settings)
 
 
-async def test_pagination_repeat_ids_multi_category_dedup_and_limits(
+async def test_broad_remote_query_pagination_repeat_ids_and_limits(
     rows, transport, monkeypatch
 ):
     calls = []
 
     def handler(request):
-        calls.append(
-            (request.url.params["JobCategoryCode"], request.url.params["Page"])
-        )
+        calls.append(request.url.params["Page"])
         row = copy.deepcopy(rows[0])
         row["MatchedObjectId"] = "1" if request.url.params["Page"] == "1" else "2"
         return httpx.Response(200, json=page([row], total=10))
@@ -433,12 +435,11 @@ async def test_pagination_repeat_ids_multi_category_dedup_and_limits(
     monkeypatch.setattr("src.collectors.usajobs.asyncio.sleep", sleep)
     collector = USAJobsCollector(max_pages=5, max_jobs=2)
     collector.page_size = 1
-    collector.categories = ("2210", "1550")
     jobs = await collector.collect()
     assert [job.external_id for job in jobs] == ["1", "2"]
-    assert calls == [("2210", "1"), ("1550", "1"), ("2210", "2")]
-    assert sleep.await_count == 2
-    assert collector.last_report["api_results_received"] == 3
+    assert calls == ["1", "2"]
+    assert sleep.await_count == 1
+    assert collector.last_report["api_results_received"] == 2
 
 
 async def test_repeated_page_stops_and_total_exhaustion(rows, transport, monkeypatch):
@@ -560,3 +561,30 @@ def test_settings_empty_credentials_and_bounds():
         config.USAJOBS_MAX_PAGES_PER_QUERY == 2
         and config.USAJOBS_MAX_JOBS_PER_RUN == 100
     )
+
+
+async def test_broad_remote_search_accepts_nonit_federal_roles(rows, transport):
+    titles = ["Accountant", "HR Specialist", "Contract Specialist"]
+    fixtures = []
+    for i, title in enumerate(titles):
+        row = copy.deepcopy(rows[0])
+        row["MatchedObjectId"] = str(900000001 + i)
+        descriptor = row["MatchedObjectDescriptor"]
+        descriptor["PositionTitle"] = title
+        descriptor["PositionURI"] = f"https://www.usajobs.gov/job/{900000001+i}"
+        descriptor["PositionEndDate"] = "2099-12-31"
+        descriptor["JobCategory"] = [{"Name": title, "Code": "0500"}]
+        fixtures.append(row)
+    calls = []
+
+    def respond(request):
+        calls.append(request)
+        assert "JobCategoryCode" not in request.url.params
+        assert "Keyword" not in request.url.params
+        assert request.url.params["RemoteIndicator"] == "True"
+        return httpx.Response(200, json=page(fixtures))
+
+    transport(respond)
+    jobs = await USAJobsCollector().collect()
+    assert [job.title for job in jobs] == titles
+    assert len(calls) == 1

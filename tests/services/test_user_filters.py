@@ -44,7 +44,7 @@ async def test_new_user_defaults_and_commit(service):
     assert filters.excluded_technologies == filters.keywords == []
     assert filters.allowed_regions == list(DEFAULT_REGIONS)
     assert filters.sources == list(DEFAULT_SOURCES)
-    assert filters.remote_only and filters.exclude_us_only
+    assert filters.remote_only and not filters.exclude_us_only
     assert filters.timezone_tolerance_hours == 2
     assert filters.currency is filters.min_salary is None
     assert filters.timezone == "UTC"
@@ -63,22 +63,25 @@ async def test_usajobs_opt_in_preserves_preferences_and_reset_disables_it(servic
     assert "usajobs" not in (await service.reset(7)).sources
 
 
-async def test_owner_bootstrap_preserves_legacy_only_when_missing(service):
+async def test_owner_bootstrap_uses_neutral_defaults_and_preserves_saved_filters(
+    service,
+):
     service.owner_telegram_id = 123
     service.repository.get_by_user_id.return_value = None
     filters = await service.get_filters(7)
-    assert filters.required_technologies == ["python"]
-    assert filters.preferred_technologies == [
-        "fastapi",
-        "postgresql",
-        "redis",
-        "celery",
-        "docker",
-    ]
+    assert filters.required_technologies == []
+    assert filters.preferred_technologies == []
+    assert filters.keywords == []
+    assert filters.allowed_regions == ["worldwide"]
     saved = UserFilterORM(user_id=7, **filter_defaults())
     saved.required_technologies = ["javascript"]
+    saved.preferred_technologies = ["figma"]
+    saved.allowed_regions = ["latam"]
     service.repository.get_by_user_id.return_value = saved
-    assert (await service.get_filters(7)).required_technologies == ["javascript"]
+    existing = await service.get_filters(7)
+    assert existing.required_technologies == ["javascript"]
+    assert existing.preferred_technologies == ["figma"]
+    assert existing.allowed_regions == ["latam"]
     assert service.repository.add.await_count == 1
 
 
@@ -157,8 +160,9 @@ async def test_toggle_lists(service, field, value):
 
 @pytest.mark.parametrize("field", ["remote_only", "exclude_us_only"])
 async def test_toggle_booleans(service, field):
-    assert getattr(await service.toggle(7, field), field) is False
-    assert getattr(await service.toggle(7, field), field) is True
+    before = getattr(await service.get_filters(7), field)
+    assert getattr(await service.toggle(7, field), field) is not before
+    assert getattr(await service.toggle(7, field), field) is before
 
 
 async def test_cannot_disable_last_source(service):
@@ -247,18 +251,12 @@ async def test_timezone_read_fresh_and_not_duplicated_in_filter_table(service):
     assert "timezone" not in UserFilterORM.__table__.columns
 
 
-def test_mapping_disabled_region_flags_do_not_reenable_regions():
+def test_worldwide_jobs_are_compatible_with_explicit_and_empty_region_preferences():
     row = UserFilterORM(user_id=7, **filter_defaults())
     row.allowed_regions = ["europe"]
     filters = filters_to_dto(row, "UTC")
-    assert not any(
-        (
-            filters.worldwide_allowed,
-            filters.latam_allowed,
-            filters.south_america_allowed,
-            filters.uruguay_allowed,
-        )
-    )
+    assert filters.allowed_regions == ["europe"]
+    assert not any(name.endswith("_allowed") for name in type(filters).model_fields)
     job = JobDTO(
         source="remoteok",
         external_id="1",
@@ -267,9 +265,9 @@ def test_mapping_disabled_region_flags_do_not_reenable_regions():
         remote=True,
         remote_regions=["worldwide"],
     )
-    assert not FilterService().evaluate(job, filters).accepted
+    assert FilterService().evaluate(job, filters).accepted
     row.allowed_regions = []
-    assert not FilterService().evaluate(job, filters_to_dto(row, "UTC")).accepted
+    assert FilterService().evaluate(job, filters_to_dto(row, "UTC")).accepted
 
 
 @pytest.mark.parametrize(
@@ -315,3 +313,66 @@ def test_defaults_are_not_shared_mutable_lists():
     for field in LIST_FIELDS:
         first[field].append("test")
         assert "test" not in second[field]
+
+
+@pytest.mark.parametrize(
+    "currency",
+    ["USD", "EUR", "GBP", "BRL", "JPY", "CHF", "NZD", "COP", "ARS", " cad ", None],
+)
+async def test_global_currency_codes(service, currency):
+    result = await service.update_currency(7, currency)
+    assert result.currency == (currency.strip().upper() if currency else None)
+
+
+@pytest.mark.parametrize("currency", ["US", "DOLLAR", "123", "", "ＵＳＤ", 123])
+async def test_invalid_custom_currency_never_writes(service, currency):
+    with pytest.raises(ValueError):
+        await service.update_currency(7, currency)
+    service.session.commit.assert_not_awaited()
+
+
+async def test_country_input_aliases_and_region_toggles_preserve_countries(service):
+    row = service.repository.get_by_user_id.return_value
+    row.allowed_regions = []
+    added = await service.update_countries(7, "add", "Uruguay, Spain, Canada, ES")
+    assert added.allowed_regions == ["uruguay", "spain", "canada"]
+    toggled = await service.toggle(7, "allowed_regions", "europe")
+    assert set(toggled.allowed_regions) == {"uruguay", "spain", "canada", "europe"}
+    removed = await service.update_countries(7, "remove", "UY, CAN")
+    assert set(removed.allowed_regions) == {"spain", "europe"}
+    assert (await service.update_countries(7, "clear")).allowed_regions == ["europe"]
+
+
+@pytest.mark.parametrize("value", ["Atlantis", "Spain, xxx", "", "Europe"])
+async def test_invalid_country_input_is_atomic(service, value):
+    with pytest.raises(ValueError):
+        await service.update_countries(7, "add", value)
+    service.session.commit.assert_not_awaited()
+
+
+async def test_existing_personal_profile_is_preserved_including_us_exclusion(service):
+    row = service.repository.get_by_user_id.return_value
+    row.keywords = ["python"]
+    row.preferred_technologies = ["fastapi", "uxresearch"]
+    row.allowed_regions = ["latam", "uruguay"]
+    row.exclude_us_only = True
+    result = await service.get_filters(7)
+    assert result.keywords == row.keywords == ["python"]
+    assert result.preferred_technologies == ["fastapi", "uxresearch"]
+    assert result.allowed_regions == ["latam", "uruguay"]
+    assert result.exclude_us_only is True
+
+
+async def test_skill_edits_respect_saved_compact_aliases(
+    service,
+):
+    row = service.repository.get_by_user_id.return_value
+    row.preferred_technologies = ["uxresearch", "figma"]
+    added = await service.update_list(7, "preferred_technologies", "add", "UX Research")
+    assert added.preferred_technologies == ["uxresearch", "figma"]
+    excluded = await service.update_list(
+        7, "excluded_technologies", "add", "UX Research"
+    )
+    assert excluded.preferred_technologies == ["figma"]
+    with pytest.raises(ValueError):
+        await service.update_list(7, "required_technologies", "add", "uxresearch")

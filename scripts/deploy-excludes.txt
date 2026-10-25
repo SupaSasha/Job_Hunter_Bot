@@ -12,7 +12,7 @@
 .codex/
 .agents/
 .aws/
-data/
+/data/
 postgres_data/
 redis_data/
 logs/

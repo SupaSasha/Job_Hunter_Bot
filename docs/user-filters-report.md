@@ -25,7 +25,7 @@ Created:
 Modified:
 
 - `src/models/__init__.py`: register/export the model.
-- `src/services/default_filters.py`: identify the legacy owner bootstrap profile.
+- `src/services/default_filters.py`: provide a neutral profile for new users.
 - `src/services/digests.py`: load recipient filters through UserFilterService.
 - `src/bot/commands.py`: delegate /filters and /cancel; update public help.
 - `src/bot/updates.py`: route filters callbacks and pending plain text.
@@ -58,7 +58,7 @@ Repository API:
 
 ```python
 await UserFilterRepository(session).get_by_user_id(user_id)  # ORM or None
-await UserFilterRepository(session).add(filters)            # ORM; flush only
+await UserFilterRepository(session).add(filters)  # ORM; flush only
 ```
 
 Get-or-create orchestration belongs to the service, following the existing
@@ -74,40 +74,39 @@ await service.get_filters(user_id)
 await service.get_or_create_filters(user_id)
 await service.update_list(user_id, field, action, text="")  # add/remove/clear
 await service.toggle(user_id, field, value=None)
-await service.update_min_salary(user_id, amount)            # digit text or None
-await service.update_currency(user_id, currency)            # USD/EUR/UYU/None
-await service.update_timezone_tolerance(user_id, hours)     # integer 0..4
+await service.update_min_salary(user_id, amount)  # digit text or None
+await service.update_currency(user_id, currency)  # any three-letter currency code or None
+await service.update_timezone_tolerance(user_id, hours)  # integer 0..4
 await service.reset(user_id)
 ```
 
 `filters_to_dto(row, timezone)` copies arrays/scalars into UserFilterDTO and
-derives worldwide_allowed, latam_allowed, south_america_allowed and
-uruguay_allowed from region membership. This prevents legacy DTO flags from
-silently re-enabling disabled regions. Timezone comes from notification settings
-on every read, with SCHEDULER_TIMEZONE as the fallback before preferences exist.
+uses allowed_regions as the single source of region preferences. An empty allowed_regions list
+means any region; a vacancy marked worldwide is compatible with every specific
+region. Timezone comes from the recipient's notification settings; the scheduler
+default remains an operational default, not a global scoring bonus.
 No duplicate DTO, scoring weights, new dependencies or handler ORM writes were
 introduced. Active-user/private-chat checks apply to commands, callbacks and
 text input.
 
 ## Defaults and owner bootstrap
 
-New users receive empty keywords, technology, blacklist, employment and
-experience lists; Worldwide/LATAM/South America/Uruguay; Remote OK, We Work
-Remotely and Get on Board; Remote only and Exclude US-only ON; tolerance ±2h;
-no minimum salary or currency restriction. ORM and service defaults agree.
+New users receive empty keywords, skills, blacklist, employment and experience
+lists; allowed_regions=[worldwide]; eight enabled sources (USAJOBS remains
+opt-in); Remote only ON and Exclude US-only OFF; tolerance ±2h; no minimum salary or
+currency restriction. Empty region preferences mean any region. ORM and service
+defaults agree.
 
-Only a missing row for the configured TELEGRAM_CHAT_ID uses the legacy owner's
-required Python and preferred FastAPI/PostgreSQL/Redis/Celery/Docker profile.
-Existing rows are never overwritten, including owner rows modified or reset by
-the user. Reset uses the generic new-user defaults and leaves notification
-settings and subscription unchanged. The first /filters or digest lazily
-initializes a persisted active user. Existing public /start onboarding behavior
-is preserved.
+No owner-specific profession or geography profile is bootstrapped. Existing
+saved rows are never overwritten, including custom owner rows. Reset uses the
+neutral defaults and leaves notification settings and subscription unchanged.
+The first /filters or digest lazily initializes a persisted active user.
+Existing public /start onboarding behavior is preserved.
 
 ## Telegram UI and callbacks
 
 The main /filters message shows all saved search fields, followed by buttons for
-Keywords, Required tech, Preferred tech, Excluded tech, Regions, Employment,
+Keywords, Required skills, Preferred skills, Excluded skills, Regions, Employment,
 Experience, Salary, Sources, Blacklist, Timezone tolerance and Reset filters.
 Digest time, minimum score, notification timezone and plan are absent. All
 menus, prompts and successful updates reuse editMessageText. Reset first asks
@@ -125,20 +124,20 @@ the values.
 | `filters:employment`, `filters:employment:<type>` | Employment menu/toggle |
 | `filters:experience`, `filters:experience:<level>` | Experience menu/toggle |
 | `filters:salary`, `filters:min_salary`, `filters:salary:clear` | Salary menu, text amount, clear amount |
-| `filters:currency`, `filters:currency:<USD/EUR/UYU/Any>` | Currency menu/selection |
+| `filters:currency`, `filters:currency:<code/Any/Other>` | Currency menu/selection |
 | `filters:sources`, `filters:sources:<source>` | Active collector menu/toggle |
 | `filters:blacklist` | Words/Companies menu |
 | `filters:blacklist_words`, `filters:blacklist_companies` | Blacklist list editors; also use add/remove/clear |
 | `filters:tz_tol`, `filters:tz_tol:<0..4>` | Tolerance menu/selection |
 | `filters:reset`, `filters:reset:confirm` | Reset confirmation/commit |
 
-Canonical regions: worldwide, latam, south_america, uruguay, americas,
-north_america, europe, eu, emea, apac. Employment: full_time, part_time,
+Canonical region options: worldwide, americas, north_america, latam, south_america,
+europe, eu, emea, apac, asia, africa, oceania. Specific countries supports names or
+ISO codes through Add/Remove/Clear; Uruguay is an ordinary country. Employment: full_time, part_time,
 contract, freelance, internship. Experience: junior, middle, senior, lead,
-staff, principal. Sources: remoteok, weworkremotely, getonboard only.
+staff, principal. Sources: all nine registered collectors, with USAJOBS initially disabled.
 
-Empty employment/experience means Any. No selected regions excludes vacancies
-with known regions, preserving FilterService's existing policy. The last source
+Empty region, employment and experience preferences mean Any. The last source
 cannot be disabled: `At least one source must be enabled.` Salary accepts ASCII
 integer digits >=0 within PostgreSQL INTEGER range; `$2500`, `2500 USD`, `2.5k`
 and negative amounts are rejected. Clear removes the amount while retaining
@@ -202,10 +201,10 @@ verified this saved profile:
 }
 ```
 
-The reopened English main screen includes Python, FastAPI/PostgreSQL/Redis,
-the four selected regions, Remote only/Exclude US-only Yes, Full-time/Contract,
-Junior/Middle, USD 2500, all three sources and ±2h. Fields appear with canonical
-technology text (lowercase), and display labels for regions/types/sources.
+The following reopened English screen was a historical saved custom profile,
+not the new-user defaults. It used Python-related filters and four selected
+regions. Existing saved profiles remain intact; new accounts receive neutral
+lists and no region restriction.
 
 The owner /digest command was tested with a fake dispatcher, then the actual
 DailyDigestService processed a matching database vacancy using the saved row
@@ -318,3 +317,9 @@ Git status --short --branch:
 ?? tests/integration/test_persistent_filters_postgres.py
 ?? tests/services/test_user_filters.py
 ```
+
+Global currency input accepts three ASCII letters (stored uppercase), with eight
+presets, Other and Any. /settings includes global timezone presets plus custom
+IANA input validated by ZoneInfo. Pending input now also includes countries,
+custom currency and custom timezone. EN/ES labels are Skills/Habilidades; examples
+include design, sales and accounting. See [the universal matching report](universal-matching-report.md).

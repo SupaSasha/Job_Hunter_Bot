@@ -126,7 +126,7 @@ def test_no_description_inference_and_explicit_category_skills(raw):
     ]
     raw.pop("seniority")
     job = NormalizationService().normalize(parse_job(raw))
-    assert set(job.technologies) == {"python", "fastapi"}
+    assert job.technologies == ["fastapi"]  # A role category is not a skill.
     assert job.experience_level is job.timezone_text is None
 
 
@@ -404,3 +404,32 @@ def test_source_has_no_scoring_bonus(raw):
     assert scoring.calculate(job, filters) == scoring.calculate(
         job.model_copy(update={"source": "remoteok"}), filters
     )
+
+
+def test_structured_nontech_skills_and_specific_category_labels_are_preserved(raw):
+    raw["skills"] = [
+        "Figma",
+        "UX Research",
+        "Communication",
+        "Unknown Professional Skill",
+    ]
+    raw["tags"] = ["Salesforce", "Excel"]
+    raw["categories"] = [
+        "Engineering",
+        "Marketing",
+        "Sales",
+        "Finance",
+        "Design",
+        "Accounting",
+        "SEO",
+    ]
+    job = NormalizationService().normalize(parse_job(raw))
+    assert set(job.technologies) == {
+        "figma",
+        "ux research",
+        "unknown professional skill",
+        "salesforce",
+        "excel",
+        "accounting",
+        "seo",
+    }

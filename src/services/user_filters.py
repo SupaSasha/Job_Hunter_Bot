@@ -16,21 +16,26 @@ from src.models.user_filter import (
 from src.repositories.notification_settings import NotificationSettingsRepository
 from src.repositories.user_filters import UserFilterRepository
 from src.schemas.filters import UserFilterDTO
-from src.services.default_filters import default_user_filters
+from src.services.regions import normalize_country
 from src.services.tokens import normalize_technology
 
 REGIONS = (
-    *DEFAULT_REGIONS,
+    "worldwide",
     "americas",
     "north_america",
+    "latam",
+    "south_america",
     "europe",
     "eu",
     "emea",
     "apac",
+    "asia",
+    "africa",
+    "oceania",
 )
 EMPLOYMENT_TYPES = ("full_time", "part_time", "contract", "freelance", "internship")
 EXPERIENCE_LEVELS = ("junior", "middle", "senior", "lead", "staff", "principal")
-CURRENCIES = ("USD", "EUR", "UYU")
+CURRENCIES = ("USD", "EUR", "GBP", "CAD", "AUD", "BRL", "MXN", "UYU")
 TEXT_LISTS = {
     "keywords",
     "required_technologies",
@@ -58,7 +63,7 @@ def filter_defaults() -> dict:
         "allowed_regions": list(DEFAULT_REGIONS),
         "sources": list(DEFAULT_SOURCES),
         "remote_only": True,
-        "exclude_us_only": True,
+        "exclude_us_only": False,
         "min_salary": None,
         "currency": None,
         "timezone_tolerance_hours": 2,
@@ -66,7 +71,7 @@ def filter_defaults() -> dict:
 
 
 def filters_to_dto(row: UserFilterORM, timezone: str) -> UserFilterDTO:
-    """Derive region flags from storage; use the notification timezone."""
+    """Read saved preferences without rewriting them; use notification timezone."""
     values = {field: list(getattr(row, field)) for field in LIST_FIELDS}
     values.update(
         {
@@ -83,10 +88,6 @@ def filters_to_dto(row: UserFilterORM, timezone: str) -> UserFilterDTO:
     return UserFilterDTO(
         **values,
         timezone=timezone,
-        worldwide_allowed="worldwide" in row.allowed_regions,
-        latam_allowed="latam" in row.allowed_regions,
-        south_america_allowed="south_america" in row.allowed_regions,
-        uruguay_allowed="uruguay" in row.allowed_regions,
     )
 
 
@@ -138,27 +139,6 @@ class UserFilterService:
             row = await self.repository.get_by_user_id(user_id)
             if row is None:
                 values = filter_defaults()
-                if (
-                    self.owner_telegram_id is not None
-                    and user.telegram_id == self.owner_telegram_id
-                ):
-                    legacy = default_user_filters(
-                        preferences.timezone
-                        if preferences
-                        else settings.SCHEDULER_TIMEZONE
-                    )
-                    values.update(
-                        {
-                            "keywords": legacy.keywords,
-                            "required_technologies": legacy.required_technologies,
-                            "preferred_technologies": legacy.preferred_technologies,
-                            "allowed_regions": legacy.allowed_regions,
-                            "sources": legacy.sources,
-                            "remote_only": legacy.remote_only,
-                            "exclude_us_only": legacy.exclude_us_only,
-                            "timezone_tolerance_hours": legacy.timezone_tolerance_hours,
-                        }
-                    )
                 row = await self.repository.add(
                     UserFilterORM(user_id=user_id, **values)
                 )
@@ -188,29 +168,39 @@ class UserFilterService:
         values = [] if action == "clear" else normalize_list(field, text)
 
         def change(row):
-            current = getattr(row, field)
-            updated = (
-                list(dict.fromkeys([*current, *values]))
-                if action == "add"
-                else (
-                    [item for item in current if item not in values]
-                    if action == "remove"
-                    else []
-                )
+            canonicalize = (
+                normalize_technology if field.endswith("technologies") else str.lower
             )
+            current = getattr(row, field)
+            if action == "add":
+                updated = list(current)
+                seen = {canonicalize(item) for item in current}
+                for value in values:
+                    if value not in seen:
+                        updated.append(value)
+                        seen.add(value)
+            elif action == "remove":
+                updated = [item for item in current if canonicalize(item) not in values]
+            else:
+                updated = []
             if len(updated) > 50:
                 raise LocalizedValidationError("error.list_limit")
-            if field in {"required_technologies", "preferred_technologies"} and set(
-                updated
-            ) & set(row.excluded_technologies):
+            if field in {"required_technologies", "preferred_technologies"} and {
+                canonicalize(item) for item in updated
+            } & {canonicalize(item) for item in row.excluded_technologies}:
                 raise LocalizedValidationError("error.tech_conflict")
             setattr(row, field, updated)
             if field == "excluded_technologies":
+                excluded = {canonicalize(item) for item in updated}
                 for target in ("required_technologies", "preferred_technologies"):
                     setattr(
                         row,
                         target,
-                        [item for item in getattr(row, target) if item not in updated],
+                        [
+                            item
+                            for item in getattr(row, target)
+                            if canonicalize(item) not in excluded
+                        ],
                     )
 
         return await self._run(user_id, change)
@@ -234,9 +224,9 @@ class UserFilterService:
             )
             if field == "sources" and not updated:
                 raise LocalizedValidationError("filters.source_minimum")
-            setattr(
-                row, field, [item for item in TOGGLE_LISTS[field] if item in updated]
-            )
+            ordered = [item for item in TOGGLE_LISTS[field] if item in updated]
+            extras = [item for item in updated if item not in TOGGLE_LISTS[field]]
+            setattr(row, field, [*ordered, *extras])
 
         return await self._run(user_id, change)
 
@@ -259,9 +249,52 @@ class UserFilterService:
     async def update_currency(
         self, user_id: int, currency: str | None
     ) -> UserFilterDTO:
-        if currency is not None and currency not in CURRENCIES:
-            raise LocalizedValidationError("error.currency")
+        if currency is not None:
+            if not isinstance(currency, str) or not re.fullmatch(
+                r"[A-Za-z]{3}", currency.strip()
+            ):
+                raise LocalizedValidationError("error.currency")
+            currency = currency.strip().upper()
         return await self._run(user_id, lambda row: setattr(row, "currency", currency))
+
+    async def update_countries(
+        self, user_id: int, action: str, text: str = ""
+    ) -> UserFilterDTO:
+        if action not in {"add", "remove", "clear"}:
+            raise LocalizedValidationError("error.list_action")
+        if not isinstance(text, str) or len(text) > 4000:
+            raise LocalizedValidationError("error.invalid_list")
+        values = (
+            []
+            if action == "clear"
+            else [normalize_country(part.strip()) for part in text.split(",")]
+        )
+        if action != "clear" and (not values or any(value is None for value in values)):
+            raise LocalizedValidationError("error.country")
+
+        def change(row):
+            current = row.allowed_regions
+            if action == "add":
+                updated = list(current)
+                seen = {normalize_country(value) or value for value in current}
+                for value in values:
+                    if value not in seen:
+                        updated.append(value)
+                        seen.add(value)
+            else:
+                updated = [
+                    value
+                    for value in current
+                    if not (
+                        normalize_country(value)
+                        and (action == "clear" or normalize_country(value) in values)
+                    )
+                ]
+            if len(updated) > 50:
+                raise LocalizedValidationError("error.list_limit")
+            row.allowed_regions = updated
+
+        return await self._run(user_id, change)
 
     async def update_timezone_tolerance(
         self, user_id: int, hours: int

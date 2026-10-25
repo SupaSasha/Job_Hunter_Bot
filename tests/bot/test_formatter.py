@@ -40,7 +40,7 @@ def test_formatter_includes_compact_score_and_omits_detailed_breakdown(
         job.title,
         job.company,
         "2,500–4,000 USD / month",
-        "Remote · LATAM",
+        "Remote · Latin America",
         "Full-time",
         "Python",
         "FastAPI",

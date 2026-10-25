@@ -6,65 +6,20 @@ from src.collectors.text import html_to_text
 from src.schemas.filters import UserFilterDTO
 from src.schemas.job import JobDTO
 from src.schemas.scoring import ScoreResult
+from src.services.region_compatibility import regions_compatible
 from src.services.timezones import user_utc_offset
-from src.services.tokens import normalize_technology
+from src.services.tokens import contains_term, normalize_technology
 
 BASE_SCORE = 50
-
-TECHNOLOGY_WEIGHTS = {
-    "python": 10,
-    "fastapi": 10,
-    "postgresql": 5,
-    "redis": 3,
-    "celery": 3,
-    "docker": 4,
-}
-
-TECHNOLOGY_LABELS = {
-    "python": "Python",
-    "fastapi": "FastAPI",
-    "postgresql": "PostgreSQL",
-    "redis": "Redis",
-    "celery": "Celery",
-    "docker": "Docker",
-    "kubernetes": "Kubernetes",
-    "nodejs": "Node.js",
-    "javascript": "JavaScript",
-    "typescript": "TypeScript",
-}
-
-REGION_BONUSES = {
-    "worldwide": 10,
-    "latam": 10,
-    "uruguay": 10,
-    "south_america": 8,
-    "americas": 5,
-}
-
-EXPERIENCE_LEVEL_BONUSES = {
-    "junior": 5,
-    "middle": 5,
-}
-
-EXPERIENCE_LEVEL_PENALTIES = {
-    "senior": -5,
-    "lead": -10,
-    "staff": -20,
-    "principal": -20,
-}
-
-TITLE_SENIORITY_PENALTIES = {
-    "senior": -5,
-    "lead": -10,
-    "staff": -20,
-    "principal": -20,
-    "architect": -15,
-    "engineering manager": -20,
-}
-
-PREFERRED_TECH_BONUS = 4
-MAX_PREFERRED_TECH_BONUS = 12
-MAX_KEYWORD_BONUS = 9
+KEYWORD_WEIGHT = 15
+PREFERRED_SKILL_WEIGHT = 20
+REQUIRED_SKILL_WEIGHT = 10
+REGION_WEIGHT = 10
+TIMEZONE_WEIGHT = 10
+EMPLOYMENT_WEIGHT = 5
+EXPERIENCE_WEIGHT = 10
+SALARY_WEIGHT = 5
+REMOTE_WEIGHT = 5
 
 
 class ScoringService:
@@ -117,74 +72,84 @@ class ScoringService:
             return None
 
         normalized = cls._normalize_text(title)
-        if "senior" in normalized or "sr." in normalized:
+        if re.search(r"\b(?:senior\b|sr\.)", normalized):
             return "senior"
-        if "engineering manager" in normalized:
-            return "engineering manager"
-        if "principal" in normalized:
+        if re.search(r"\bprincipal\b", normalized):
             return "principal"
-        if "staff" in normalized:
-            return "staff"
-        if "lead" in normalized:
+        if re.search(r"\blead\b", normalized):
             return "lead"
-        if "architect" in normalized:
-            return "architect"
+        if re.search(r"\b(?:junior|entry[- ]level)\b", normalized):
+            return "junior"
+        if re.search(r"\bmid[- ]level\b", normalized):
+            return "middle"
         return None
 
     @classmethod
-    def _technology_label(cls, technology: str) -> str:
-        canonical = normalize_technology(technology)
-        if canonical is None:
-            return technology
-        return TECHNOLOGY_LABELS.get(canonical, canonical.title())
-
-    @classmethod
-    def _score_technologies(
+    def _score_skill_preferences(
         cls,
         job: JobDTO,
         filters: UserFilterDTO,
         matched_rules: list[str],
-        penalties: list[str],
     ) -> int:
-        score = 0
-        seen_technologies: set[str] = set()
+        skills = list(
+            dict.fromkeys(
+                canonical
+                for item in job.technologies
+                if (canonical := normalize_technology(item))
+            )
+        )
+        haystack = cls._normalize_text(
+            f"{job.title or ''} {html_to_text(job.description)}"
+        )
 
-        for technology in job.technologies:
-            canonical = normalize_technology(technology)
-            if canonical is None or canonical in seen_technologies:
-                continue
-            seen_technologies.add(canonical)
-            if canonical in TECHNOLOGY_WEIGHTS:
-                bonus = TECHNOLOGY_WEIGHTS[canonical]
-                score += bonus
-                cls._append_unique(
-                    matched_rules,
-                    f"{cls._technology_label(canonical)}: +{bonus}",
-                )
+        def matches(item: str) -> bool:
+            canonical = normalize_technology(item)
+            if canonical is None:
+                return False
+            if canonical in skills:
+                return True
+            return contains_term(haystack, canonical)
 
-        preferred_bonus_total = 0
-        preferred_hits: list[str] = []
-        for technology in filters.preferred_technologies:
-            canonical = normalize_technology(technology)
-            if canonical is None or canonical not in seen_technologies:
-                continue
-            preferred_bonus_total += PREFERRED_TECH_BONUS
-            preferred_hits.append(
-                f"Preferred technology {cls._technology_label(canonical)}: "
-                f"+{PREFERRED_TECH_BONUS}"
+        preferred = list(
+            dict.fromkeys(
+                canonical
+                for item in filters.preferred_technologies
+                if (canonical := normalize_technology(item))
+            )
+        )
+        preferred_matches = [item for item in preferred if matches(item)]
+        score = (
+            round(PREFERRED_SKILL_WEIGHT * len(preferred_matches) / len(preferred))
+            if preferred
+            else 0
+        )
+        if score:
+            cls._append_unique(
+                matched_rules,
+                "Preferred skills matched "
+                f"({len(preferred_matches)}/{len(preferred)}): +{score}",
             )
 
-        if preferred_bonus_total > MAX_PREFERRED_TECH_BONUS:
-            preferred_bonus_total = MAX_PREFERRED_TECH_BONUS
-
-        if preferred_bonus_total:
-            for entry in preferred_hits:
-                if preferred_bonus_total <= 0:
-                    break
-                cls._append_unique(matched_rules, entry)
-            score += preferred_bonus_total
-
-        return score
+        required = list(
+            dict.fromkeys(
+                canonical
+                for item in filters.required_technologies
+                if (canonical := normalize_technology(item))
+            )
+        )
+        required_matches = [item for item in required if item in skills]
+        required_score = (
+            round(REQUIRED_SKILL_WEIGHT * len(required_matches) / len(required))
+            if required
+            else 0
+        )
+        if required_score:
+            cls._append_unique(
+                matched_rules,
+                "Required skills matched "
+                f"({len(required_matches)}/{len(required)}): +{required_score}",
+            )
+        return score + required_score
 
     @classmethod
     def _score_keywords(
@@ -193,16 +158,14 @@ class ScoringService:
         filters: UserFilterDTO,
         matched_rules: list[str],
     ) -> int:
-        haystack = f"{job.title or ''} {job.description or ''}".lower()
-        score = 0
+        haystack = f"{job.title or ''} {html_to_text(job.description)}".lower()
         matched_keywords = []
 
         for keyword in filters.keywords:
             normalized_keyword = cls._normalize_text(keyword)
             if not normalized_keyword:
                 continue
-            pattern = rf"(?<![a-z0-9]){re.escape(normalized_keyword)}(?![a-z0-9])"
-            if re.search(pattern, haystack):
+            if contains_term(haystack, normalized_keyword):
                 matched_keywords.append(normalized_keyword)
 
         unique_keywords = []
@@ -210,54 +173,47 @@ class ScoringService:
             if keyword not in unique_keywords:
                 unique_keywords.append(keyword)
 
-        for keyword in unique_keywords:
-            if score >= MAX_KEYWORD_BONUS:
-                break
-            score += 3
-            cls._append_unique(matched_rules, f"Keyword: {keyword}: +3")
-
+        keywords = list(
+            dict.fromkeys(
+                normalized
+                for keyword in filters.keywords
+                if (normalized := cls._normalize_text(keyword))
+            )
+        )
+        score = (
+            round(KEYWORD_WEIGHT * len(unique_keywords) / len(keywords))
+            if keywords
+            else 0
+        )
+        if score:
+            cls._append_unique(
+                matched_rules,
+                f"Keywords matched ({len(unique_keywords)}/{len(keywords)}): +{score}",
+            )
         return score
 
     @classmethod
     def _score_region(
         cls,
         job: JobDTO,
+        filters: UserFilterDTO,
         matched_rules: list[str],
         warnings: list[str],
         penalties: list[str],
     ) -> int:
+        allowed = list(filters.allowed_regions)
+        if not allowed:
+            return 0
         if not job.remote_regions:
             cls._append_unique(penalties, "Region is not specified: -2")
             cls._append_unique(warnings, "Remote region is unknown")
             return -2
-
-        best_region = None
-        best_bonus = 0
-        for region in job.remote_regions:
-            canonical = cls._normalize_token(region)
-            if canonical is None:
-                continue
-            if canonical in REGION_BONUSES:
-                bonus = REGION_BONUSES[canonical]
-                if bonus > best_bonus:
-                    best_region = canonical
-                    best_bonus = bonus
-
-        if best_region is None:
-            cls._append_unique(penalties, "Region is not specified: -2")
-            cls._append_unique(warnings, "Remote region is unknown")
-            return -2
-
-        label = {
-            "worldwide": "Worldwide",
-            "latam": "LATAM",
-            "uruguay": "Uruguay",
-            "south_america": "South America",
-            "americas": "Americas",
-        }.get(best_region, best_region.title())
-
-        cls._append_unique(matched_rules, f"{label} region: +{best_bonus}")
-        return best_bonus
+        if any(regions_compatible(region, allowed) for region in job.remote_regions):
+            cls._append_unique(
+                matched_rules, f"Region matches user preferences: +{REGION_WEIGHT}"
+            )
+            return REGION_WEIGHT
+        return 0
 
     @classmethod
     def _score_timezone(
@@ -268,7 +224,10 @@ class ScoringService:
         penalties: list[str],
         warnings: list[str],
     ) -> int:
-        user_offset = cls._get_user_timezone_offset(filters.timezone)
+        timezone = filters.timezone
+        if timezone is None:
+            return 0
+        user_offset = cls._get_user_timezone_offset(timezone)
         vacancy_min = job.timezone_min_utc_offset
         vacancy_max = job.timezone_max_utc_offset
 
@@ -282,35 +241,36 @@ class ScoringService:
 
         if vacancy_min is not None and vacancy_max is not None:
             if vacancy_min <= user_offset <= vacancy_max:
-                cls._append_unique(matched_rules, "Timezone compatible: +10")
-                return 10
+                cls._append_unique(
+                    matched_rules, f"Timezone compatible: +{TIMEZONE_WEIGHT}"
+                )
+                return TIMEZONE_WEIGHT
 
             distance = min(
                 abs(user_offset - vacancy_min),
                 abs(user_offset - vacancy_max),
             )
             if distance <= 1:
-                cls._append_unique(
-                    matched_rules, f"Timezone distance: {distance:g} hour(s): +7"
-                )
+                cls._append_unique(matched_rules, "Timezone within 1 hour: +7")
                 return 7
             if distance <= 2:
-                cls._append_unique(
-                    matched_rules, f"Timezone distance: {distance:g} hours: +4"
-                )
+                cls._append_unique(matched_rules, "Timezone within 2 hours: +4")
                 return 4
             if distance <= 3:
                 cls._append_unique(
-                    matched_rules, f"Timezone distance: {distance:g} hours: 0"
+                    matched_rules,
+                    f"Timezone difference: {distance:g} hours: no adjustment",
                 )
                 return 0
             if distance <= 4:
                 cls._append_unique(
-                    penalties, f"Timezone distance: {distance:g} hours: -10"
+                    penalties, f"Timezone differs by {distance:g} hours: -5"
                 )
-                return -10
-            cls._append_unique(penalties, "Timezone distance: 5+ hours: -20")
-            return -20
+                return -5
+            cls._append_unique(
+                penalties, f"Timezone differs by {distance:g}+ hours: -10"
+            )
+            return -10
 
         return 0
 
@@ -318,109 +278,125 @@ class ScoringService:
     def _score_experience(
         cls,
         job: JobDTO,
+        filters: UserFilterDTO,
         matched_rules: list[str],
         penalties: list[str],
         warnings: list[str],
     ) -> int:
-        score = 0
-
-        if job.experience_level is not None:
-            level = cls._normalize_token(job.experience_level)
-            if level in EXPERIENCE_LEVEL_BONUSES:
-                bonus = EXPERIENCE_LEVEL_BONUSES[level]
-                score += bonus
-                cls._append_unique(matched_rules, f"{level.title()} level: +{bonus}")
-            if level in EXPERIENCE_LEVEL_PENALTIES:
-                penalty = EXPERIENCE_LEVEL_PENALTIES[level]
-                score += penalty
-                cls._append_unique(penalties, f"{level.title()} level: {penalty}")
-            return score
-
-        inferred_level = cls._infer_experience_level_from_title(job.title)
-        if inferred_level is not None and inferred_level in TITLE_SENIORITY_PENALTIES:
-            penalty = TITLE_SENIORITY_PENALTIES[inferred_level]
-            score += penalty
-            cls._append_unique(
-                penalties,
-                f"Title seniority: {inferred_level.title()}: {penalty}",
-            )
-            return score
-
-        cls._append_unique(warnings, "Experience level is not specified")
-        return 0
-
-    @classmethod
-    def _score_experience_years(
-        cls,
-        job: JobDTO,
-        penalties: list[str],
-    ) -> int:
-        years = cls._infer_years_of_experience(job.description)
-        if years is None:
+        preferred = {
+            value.strip().casefold()
+            for value in filters.experience_levels
+            if value.strip()
+        }
+        if not preferred:
             return 0
-
-        if years <= 2:
-            return 0
-        if years == 3:
-            penalty = -2
-        elif years == 4:
-            penalty = -5
-        elif 5 <= years <= 6:
-            penalty = -10
-        else:
-            penalty = -20
-
-        cls._append_unique(
-            penalties,
-            f"Requires {years}+ years of experience: {penalty}",
+        comparable = {"junior", "middle", "senior", "lead", "staff", "principal"}
+        explicit = cls._normalize_token(job.experience_level)
+        inferred_level = explicit not in comparable
+        level = (
+            explicit
+            if explicit in comparable
+            else cls._infer_experience_level_from_title(job.title)
         )
-        return penalty
+        if level is None:
+            cls._append_unique(penalties, "Experience level is unknown: -2")
+            cls._append_unique(warnings, "Experience level is not specified")
+            return -2
+        if level in preferred:
+            cls._append_unique(
+                matched_rules,
+                f"Experience matches user preferences: +{EXPERIENCE_WEIGHT}",
+            )
+            return EXPERIENCE_WEIGHT
+        if inferred_level:
+            cls._append_unique(
+                penalties, "Inferred experience differs from user preferences: -5"
+            )
+            return -5
+        return 0
 
     @classmethod
     def _score_salary(
         cls,
         job: JobDTO,
+        filters: UserFilterDTO,
+        matched_rules: list[str],
         penalties: list[str],
         warnings: list[str],
     ) -> int:
+        if filters.min_salary is None and filters.currency is None:
+            return 0
         if job.salary_min is None and job.salary_max is None:
             cls._append_unique(penalties, "Salary is not specified: -2")
             cls._append_unique(warnings, "Salary is not specified")
             return -2
+        if filters.currency:
+            if not job.currency:
+                cls._append_unique(penalties, "Salary currency is unknown: -2")
+                cls._append_unique(warnings, "Salary currency is not specified")
+                return -2
+            if job.currency.casefold() != filters.currency.casefold():
+                return 0
+        salary_value = job.salary_min
+        if filters.min_salary is None or (
+            salary_value is not None and salary_value >= filters.min_salary
+        ):
+            cls._append_unique(
+                matched_rules, f"Salary meets user minimum: +{SALARY_WEIGHT}"
+            )
+            return SALARY_WEIGHT
         return 0
 
     @classmethod
     def _score_employment_type(
         cls,
         job: JobDTO,
+        filters: UserFilterDTO,
         matched_rules: list[str],
+        penalties: list[str],
         warnings: list[str],
     ) -> int:
-        if job.employment_type is None:
-            cls._append_unique(warnings, "Employment type is not specified")
+        preferred = {value.casefold() for value in filters.employment_types}
+        if not preferred:
             return 0
-        if job.employment_type == "full_time":
-            cls._append_unique(matched_rules, "Full-time: +3")
-            return 3
+        if job.employment_type is None:
+            cls._append_unique(penalties, "Employment type is unknown: -2")
+            cls._append_unique(warnings, "Employment type is not specified")
+            return -2
+        if job.employment_type.casefold() in preferred:
+            cls._append_unique(
+                matched_rules,
+                f"Employment matches user preferences: +{EMPLOYMENT_WEIGHT}",
+            )
+            return EMPLOYMENT_WEIGHT
         return 0
 
-    def calculate(self, job: JobDTO, filters: UserFilterDTO) -> ScoreResult:
+    def calculate(
+        self,
+        job: JobDTO,
+        filters: UserFilterDTO,
+    ) -> ScoreResult:
         matched_rules: list[str] = ["Base score: +50"]
         penalties: list[str] = []
         warnings: list[str] = []
 
         score = BASE_SCORE
-        score += self._score_technologies(job, filters, matched_rules, penalties)
+        score += self._score_skill_preferences(job, filters, matched_rules)
         score += self._score_keywords(job, filters, matched_rules)
-        if job.remote:
-            self._append_unique(matched_rules, "Remote: +10")
-            score += 10
-        score += self._score_region(job, matched_rules, warnings, penalties)
+        if filters.remote_only and job.remote:
+            self._append_unique(
+                matched_rules, f"Remote matches user preference: +{REMOTE_WEIGHT}"
+            )
+            score += REMOTE_WEIGHT
+        score += self._score_region(job, filters, matched_rules, warnings, penalties)
         score += self._score_timezone(job, filters, matched_rules, penalties, warnings)
-        score += self._score_experience(job, matched_rules, penalties, warnings)
-        score += self._score_experience_years(job, penalties)
-        score += self._score_salary(job, penalties, warnings)
-        score += self._score_employment_type(job, matched_rules, warnings)
+        score += self._score_experience(
+            job, filters, matched_rules, penalties, warnings
+        )
+        score += self._score_salary(job, filters, matched_rules, penalties, warnings)
+        score += self._score_employment_type(
+            job, filters, matched_rules, penalties, warnings
+        )
 
         if score < 0:
             score = 0

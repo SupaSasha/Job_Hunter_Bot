@@ -76,7 +76,7 @@ def test_all_explicit_fields_and_no_raw_mutation(raw):
         ("Worldwide", ["worldwide"]),
         ("LATAM", ["latam"]),
         ("Europe", ["europe"]),
-        ("Canada,  Germany, UK,  USA", ["canada", "germany", "uk", "us"]),
+        ("Canada,  Germany, UK,  USA", ["canada", "germany", "united_kingdom", "us"]),
         ("Uruguay", ["uruguay"]),
     ],
 )

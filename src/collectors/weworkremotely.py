@@ -10,7 +10,7 @@ from xml.etree import ElementTree as ET
 import httpx
 
 from src.collectors.base import BaseJobCollector, CollectionError
-from src.collectors.skills import technical_categories
+from src.collectors.skills import category_skills, source_skills
 from src.collectors.text import html_to_text
 from src.schemas.job import JobDTO
 
@@ -69,7 +69,7 @@ def parse_job_item(item: ET.Element, *, collected_at: datetime | None = None) ->
     )
     skills = re.split(r",|\s+and\s+", field("skills"))
     categories = [(node.text or "").strip() for node in item.findall("category")]
-    technologies = technical_categories([*skills, *categories])
+    technologies = source_skills([*skills, *category_skills(categories)])
     return JobDTO(
         source="weworkremotely",
         external_id=external_id,

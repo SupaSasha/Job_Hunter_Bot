@@ -14,14 +14,10 @@ class UserFilterDTO(BaseModel):
     min_salary: int | None = None
     currency: str | None = None
 
-    allowed_regions: list[str] = Field(default_factory=list)
+    allowed_regions: list[str] = Field(default_factory=lambda: ["worldwide"])
 
     remote_only: bool = True
-    worldwide_allowed: bool = True
-    latam_allowed: bool = True
-    south_america_allowed: bool = True
-    uruguay_allowed: bool = True
-    exclude_us_only: bool = True
+    exclude_us_only: bool = False
 
     employment_types: list[str] = Field(default_factory=list)
     experience_levels: list[str] = Field(default_factory=list)
@@ -31,7 +27,7 @@ class UserFilterDTO(BaseModel):
 
     sources: list[str] = Field(default_factory=list)
 
-    timezone: str = "America/Montevideo"
+    timezone: str | None = None
     timezone_tolerance_hours: int = 2
 
 

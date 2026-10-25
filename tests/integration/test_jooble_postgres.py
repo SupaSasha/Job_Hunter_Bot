@@ -224,7 +224,7 @@ async def test_missing_key_records_failed_configuration_without_blocking_other_s
         assert run.error == "CollectorConfigurationError" and state.next_run_at
 
 
-async def test_multi_query_effectiveness_through_actual_collector_and_global_dedup(
+async def test_broad_query_effectiveness_through_actual_collector_and_global_dedup(
     pg, monkeypatch
 ):
     import httpx
@@ -244,8 +244,8 @@ async def test_multi_query_effectiveness_through_actual_collector_and_global_ded
         )
 
     def respond(request):
-        query = json.loads(request.content)["keywords"]
-        identity = 124 if query == "software" else 125
+        assert json.loads(request.content)["keywords"] == "engineering"
+        identity = 124
         item = dict(
             raw,
             id=identity,
@@ -267,13 +267,14 @@ async def test_multi_query_effectiveness_through_actual_collector_and_global_ded
     redis = Mock()
     redis.lock.return_value.acquire = AsyncMock(return_value=True)
     redis.lock.return_value.release = AsyncMock()
+    redis.incr = AsyncMock(return_value=1)
     collector = JoobleCollector()
     result = await CollectionService(pg, redis, "America/Montevideo").collect(
         "jooble", collector=collector
     )
     assert result == {
-        "received": 3,
-        "new": 2,
+        "received": 2,
+        "new": 1,
         "duplicates": 1,
         "cross_source_duplicates": 1,
         "failed": 0,
@@ -288,6 +289,6 @@ async def test_multi_query_effectiveness_through_actual_collector_and_global_ded
         query: len(new_ids.intersection(ids))
         for query, ids in collector.query_job_ids.items()
     }
-    assert per_query_new == {"software": 1, "developer": 1}
-    assert collector.last_report["api_results_received"] == 4
-    assert collector.last_report["unique_jobs"] == 3
+    assert per_query_new == {"engineering": 1}
+    assert collector.last_report["api_results_received"] == 2
+    assert collector.last_report["unique_jobs"] == 2

@@ -3,7 +3,8 @@ from __future__ import annotations
 import re
 
 from src.schemas.job import JobDTO
-from src.services.tokens import normalize_technology
+from src.services.regions import normalize_region
+from src.services.tokens import SKILL_NOISE, normalize_technology
 
 
 class NormalizationService:
@@ -92,7 +93,7 @@ class NormalizationService:
         seen: set[str] = set()
         for item in technologies:
             canonical = cls._canonicalize_technology(str(item))
-            if not canonical or canonical in seen:
+            if not canonical or canonical in SKILL_NOISE or canonical in seen:
                 continue
             normalized.append(canonical)
             seen.add(canonical)
@@ -110,7 +111,9 @@ class NormalizationService:
             if value is None:
                 continue
             lowered = value.lower().strip()
-            canonical = cls.REMOTE_REGION_ALIASES.get(lowered, lowered)
+            canonical = normalize_region(
+                cls.REMOTE_REGION_ALIASES.get(lowered, lowered)
+            )
             if canonical in seen:
                 continue
             normalized.append(canonical)

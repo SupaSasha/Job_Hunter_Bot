@@ -73,6 +73,7 @@ async def main() -> None:
                         client,
                         help_text=HELP,
                         languages=UserLanguageService(session),
+                        pending=pending,
                     )
                     filters_handler = FiltersHandler(
                         UserRepository(session),

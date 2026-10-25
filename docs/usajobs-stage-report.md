@@ -1,5 +1,10 @@
 # USAJOBS collector
 
+> Historical implementation report: the initial implementation queried remote
+> IT series 2210. Since October 25, the category constraint is omitted, retaining
+> the remote, U.S. federal scope without limiting results to IT.
+> Other implementation, query, and live-run details below are the October 16 snapshot.
+
 ## Official API research
 
 Checked October 16, 2026. Search endpoint:
@@ -85,10 +90,10 @@ logic or source-specific FilterService condition was added.
 
 ## Search and bounds
 
-USAJOBS_CATEGORIES = ("2210",). Each request includes:
+The historical implementation used USAJOBS_CATEGORIES = ("2210",). The current
+collector makes one `remote` search with no JobCategoryCode. Its request includes:
 
 ```text
-JobCategoryCode=2210
 RemoteIndicator=True
 DatePosted=30
 SortField=opendate

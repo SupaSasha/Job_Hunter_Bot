@@ -1,18 +1,20 @@
 # Job Hunter Bot
 
-A Telegram bot that finds remote jobs from **Remote OK**, **We Work Remotely**,
+A Telegram bot that finds remote jobs across professions from **Remote OK**, **We Work Remotely**,
 **Get on Board**, **Himalayas**, **Jobicy**, **The Muse**, **Hacker News — Who is
 hiring?** and **Jooble**. It filters jobs by your preferences and sends daily digests.
 
-- Personal filters for technologies, keywords, regions, salary and experience.
+- Remote job matching based on each user’s keywords, skills, region, timezone,
+  employment preferences and salary requirements.
+- Specific countries, custom IANA timezones and three-letter currency codes.
 - Match scoring, saved vacancies and feedback buttons.
 - English and Spanish interface, with a saved language preference.
 
 Built with Python, FastAPI, PostgreSQL, Redis and Celery.
 
 Jooble needs a country-specific API key and explicit [market configuration](docs/project-guide.md#jooble).
-Optional [USAJOBS](docs/project-guide.md#usajobs) adds U.S. federal technology
-jobs; it needs API credentials and is off in user filters by default.
+Optional [USAJOBS](docs/project-guide.md#usajobs) adds remote U.S. federal jobs;
+it needs API credentials and is off in user filters by default.
 
 ## Local setup
 
@@ -101,3 +103,7 @@ services while preserving `.env` and persistent volumes.
 - [User filters](docs/user-filters-report.md) and [notification settings](docs/telegram-settings-report.md).
 - [Interface languages](docs/telegram-language-report.md) and [manual digests](docs/manual-digest-report.md).
 - [Reliability and delivery guarantees](docs/hardening-review-report.md).
+
+[Universal matching audit and validation](docs/universal-matching-report.md).
+
+[Current defaults and Jooble rotation](docs/universal-rotation-report.md).

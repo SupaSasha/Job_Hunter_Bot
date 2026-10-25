@@ -214,8 +214,16 @@ async def test_acknowledgment_failure_is_handled(handler):
 
 
 def test_timezone_options_and_root_callback_lengths():
-    assert len(TIMEZONES) == 8
+    from zoneinfo import ZoneInfo
+
+    assert {
+        "Europe/Berlin",
+        "Asia/Tokyo",
+        "Africa/Johannesburg",
+        "Australia/Sydney",
+    } <= set(TIMEZONES)
     for zone in TIMEZONES:
+        assert ZoneInfo(zone).key == zone
         assert len(f"tz:{zone}".encode()) <= 64
     for row in ROOT["inline_keyboard"]:
         assert len(row[0]["callback_data"].encode()) <= 64
@@ -247,7 +255,10 @@ async def test_missing_settings_with_reply_failure_does_not_escape(handler):
             ],
         ),
         ("settings:score", [f"score:{s}" for s in (50, 60, 70, 75, 80, 85, 90)]),
-        ("settings:timezone", [f"tz:{zone}" for zone in TIMEZONES]),
+        (
+            "settings:timezone",
+            [*[f"tz:{zone}" for zone in TIMEZONES], "settings:custom_timezone"],
+        ),
     ],
 )
 async def test_menus_contain_only_supported_presets(handler, data, expected):
@@ -259,3 +270,87 @@ async def test_menus_contain_only_supported_presets(handler, data, expected):
     ]
     if data in ("settings:time", "settings:score"):
         assert [len(row) for row in rows] == [2, 2, 2, 1, 1]
+
+
+@pytest.mark.parametrize(
+    "zone",
+    [
+        "America/Montevideo",
+        "Europe/Berlin",
+        "Asia/Tokyo",
+        "Africa/Johannesburg",
+        "Australia/Sydney",
+        "America/Mexico_City",
+    ],
+)
+async def test_custom_timezone_input_routed_and_cleared_after_commit(
+    handler, fake_redis, zone
+):
+    from src.bot.pending_input import PendingInputStore
+    from src.bot.updates import route_update
+
+    handler.pending = PendingInputStore(fake_redis)
+    await handler.handle(callback("settings:custom_timezone"))
+    state = await handler.pending.get(999)
+    assert state.action == "settings:timezone"
+    payload = {
+        "text": zone,
+        "from": {"id": 999},
+        "chat": {"id": 999, "type": "private"},
+    }
+    filters = AsyncMock()
+    await route_update(
+        {"message": payload},
+        commands=AsyncMock(),
+        callbacks=AsyncMock(),
+        settings=handler,
+        filters=filters,
+    )
+    handler.service.update_timezone.assert_awaited_once_with(8, zone)
+    filters.handle_input.assert_not_awaited()
+    assert await handler.pending.get(999) is None
+
+
+async def test_invalid_custom_timezone_retry_navigation_and_filter_input_isolation(
+    handler, fake_redis
+):
+    from src.bot.pending_input import PendingInput, PendingInputStore
+    from src.i18n import LocalizedValidationError
+
+    handler.pending = PendingInputStore(fake_redis)
+    await handler.handle(callback("settings:custom_timezone"))
+    handler.service.update_timezone.side_effect = LocalizedValidationError(
+        "error.timezone"
+    )
+    payload = {
+        "text": "Invalid/Zone",
+        "from": {"id": 999},
+        "chat": {"id": 999, "type": "private"},
+    }
+    assert await handler.handle_input(payload)
+    assert await handler.pending.get(999) is not None
+    await handler.handle(callback("settings:back"))
+    assert await handler.pending.get(999) is None
+    await handler.pending.set(999, PendingInput("filters:keywords", 42))
+    assert await handler.handle_input(payload) is False
+
+
+async def test_unauthorized_custom_timezone_input_does_not_write(handler, fake_redis):
+    from src.bot.pending_input import PendingInput, PendingInputStore
+
+    handler.pending = PendingInputStore(fake_redis)
+    await handler.pending.set(999, PendingInput("settings:timezone", 42))
+    for payload in [
+        {
+            "text": "Asia/Tokyo",
+            "from": {"id": 999},
+            "chat": {"id": 999, "type": "group"},
+        },
+        {
+            "text": "Asia/Tokyo",
+            "from": {"id": 999},
+            "chat": {"id": 123, "type": "private"},
+        },
+    ]:
+        assert await handler.handle_input(payload) is False
+    handler.service.update_timezone.assert_not_awaited()

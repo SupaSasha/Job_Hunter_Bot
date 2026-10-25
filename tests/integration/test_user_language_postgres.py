@@ -153,8 +153,10 @@ async def test_two_language_digest_same_selection_different_presentation(pg):
                 telegram_id, language.value
             )
             ids.append(user.id)
-            await UserFilterService(session, owner_telegram_id=None).update_list(
-                user.id, "required_technologies", "add", "python"
+            service = UserFilterService(session, owner_telegram_id=None)
+            await service.update_list(user.id, "required_technologies", "add", "python")
+            await service.update_list(
+                user.id, "preferred_technologies", "add", "python"
             )
         job = JobDTO(
             source="remoteok",

@@ -314,3 +314,39 @@ async def test_existing_source_manual_collection_has_no_new_hourly_limit(setup):
     service.states.get.return_value.last_started_at = now
     assert (await service.collect("remoteok"))["received"] == 0
     collector.collect.assert_awaited_once()
+
+
+async def test_scheduled_and_manual_jooble_share_persistent_rotation(
+    setup, fake_redis, monkeypatch
+):
+    import json
+
+    import httpx
+
+    from src.config import settings
+
+    service, redis, _, now = setup
+    fake_redis.lock = redis.lock
+    service.redis = fake_redis
+    monkeypatch.setattr(settings, "JOOBLE_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "JOOBLE_API_DOMAIN", "uk.jooble.org")
+    monkeypatch.setattr(settings, "JOOBLE_SEARCH_LOCATION", "United Kingdom")
+    queries = []
+    real_client = httpx.AsyncClient
+
+    def respond(request):
+        queries.append(json.loads(request.content)["keywords"])
+        return httpx.Response(200, json={"jobs": [], "totalCount": 0})
+
+    monkeypatch.setattr(
+        "src.collectors.jooble.httpx.AsyncClient",
+        lambda **kwargs: real_client(transport=httpx.MockTransport(respond), **kwargs),
+    )
+    scheduled = (now - timedelta(minutes=1)).isoformat()
+    assert (await service.collect("jooble", scheduled))["received"] == 0
+    # /collect dispatches the same task with no expected schedule.
+    assert (await service.collect("jooble"))["received"] == 0
+    assert queries == ["engineering", "design"]
+    fake_redis.lock.return_value.acquire.return_value = False
+    assert (await service.collect("jooble"))["reason"] == "already_running"
+    assert queries == ["engineering", "design"]

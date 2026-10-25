@@ -43,10 +43,7 @@ def test_filter_service_accepts_matching_remote_job() -> None:
         required_technologies=["python", "postgresql"],
         keywords=["python", "backend"],
         remote_only=True,
-        worldwide_allowed=True,
-        latam_allowed=True,
-        south_america_allowed=True,
-        uruguay_allowed=True,
+        allowed_regions=["worldwide"],
     )
 
     result = service.evaluate(job, filters)
@@ -131,10 +128,10 @@ def test_filter_service_rejects_blacklist_and_salary_and_experience() -> None:
     )
 
 
-def test_filter_service_rejects_us_only_and_respects_region_flags() -> None:
+def test_filter_service_rejects_us_only_and_respects_region_preferences() -> None:
     service = FilterService()
     job = build_job(remote_regions=["us_only"])
-    filters = UserFilterDTO(exclude_us_only=True, worldwide_allowed=True)
+    filters = UserFilterDTO(exclude_us_only=True, allowed_regions=["worldwide"])
 
     result = service.evaluate(job, filters)
 

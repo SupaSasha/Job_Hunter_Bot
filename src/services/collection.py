@@ -7,6 +7,7 @@ from typing import Callable
 from redis.asyncio import Redis
 
 from src.collectors.base import BaseJobCollector, CollectionError
+from src.collectors.jooble import JoobleCollector
 from src.collectors.registry import COLLECTORS
 from src.repositories.collector_runs import CollectorRunRepository
 from src.repositories.scheduling import CollectorStateRepository
@@ -110,7 +111,10 @@ class CollectionService:
             )
             try:
                 async with asyncio.timeout(510):
-                    jobs = await (collector or COLLECTORS[source]()).collect()
+                    active_collector = collector or COLLECTORS[source]()
+                    if isinstance(active_collector, JoobleCollector):
+                        active_collector.redis = self.redis
+                    jobs = await active_collector.collect()
                     async with self.sessions() as session:
                         result = await JobPipeline(JobSaveService(session)).run(
                             jobs, result=result

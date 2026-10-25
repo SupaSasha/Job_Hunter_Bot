@@ -9,10 +9,16 @@ import httpx
 from src.collectors.base import BaseJobCollector, CollectionError
 from src.collectors.http import fetch_json
 from src.collectors.salary import parse_salary_text
-from src.collectors.skills import TECHNICAL_CATEGORIES
+from src.collectors.skills import EXPLICIT_SKILL_TERMS
 from src.collectors.text import html_to_text
 from src.schemas.job import JobDTO
 from src.services.normalization import NormalizationService
+from src.services.regions import (
+    COUNTRY_LABELS,
+    REGION_MEMBERS,
+    normalize_country,
+    normalize_region,
+)
 from src.services.tokens import TECHNOLOGY_ALIASES, normalize_technology
 
 logger = logging.getLogger(__name__)
@@ -34,21 +40,47 @@ ROLE = re.compile(
     r"\b(?:(?:senior|junior|mid|middle|staff|principal|lead|founding|full[- ]?stack|"
     r"back[- ]?end|front[- ]?end|software|platform|devops|data|machine learning|"
     r"ML|AI|security|infrastructure|product|mobile|site reliability|cloud|"
-    r"research|systems|QA|R&D|intelligence|solutions|sales)\s+){0,4}"
+    r"research|systems|QA|R&D|intelligence|solutions|sales|customer|support|"
+    r"marketing|finance|accounting|operations|recruiting|HR|"
+    r"human resources|account|UX|customer success|business development|"
+    r"talent acquisition|"
+    r"project|content|growth|legal)\s+){0,4}"
     r"(?:engineers?|developers?|designers?|scientists?|architects?|"
-    r"product managers?|engineering managers?|technical writers?|SWE|SRE)\b",
+    r"managers?|specialists?|accountants?|recruiters?|analysts?|"
+    r"customer support|representatives?|account executives?|"
+    r"technical writers?|copywriters?|consultants?|sales|business development|"
+    r"marketing|growth|customer success|talent acquisition|HR|human resources|"
+    r"operations|finance|legal|content|SWE|SRE)\b",
     re.IGNORECASE,
 )
 REGIONS = re.compile(
-    r"\b(?:US(?:A)? only|Worldwide|Anywhere|LATAM|South America|Europe|EU|EMEA|"
-    r"APAC|Canada|Uruguay)\b",
+    r"\b(?:"
+    + "|".join(
+        re.escape(label)
+        for label in sorted(
+            {
+                "US only",
+                "USA only",
+                "Worldwide",
+                "Anywhere",
+                "Latin America",
+                "European Union",
+                "Asia Pacific",
+                *(region.replace("_", " ") for region in REGION_MEMBERS),
+                *COUNTRY_LABELS.values(),
+            },
+            key=len,
+            reverse=True,
+        )
+    )
+    + r")\b",
     re.IGNORECASE,
 )
 EMPLOYMENT = re.compile(
     r"\b(?:full[- ]time|part[- ]time|contract|freelance|internship)\b", re.IGNORECASE
 )
 EXPERIENCE = re.compile(
-    r"\b(?:junior|mid|middle|senior|staff|lead|principal)\b", re.IGNORECASE
+    r"\b(?:junior|mid[- ]level|senior|lead|principal)\b", re.IGNORECASE
 )
 UTC_LABEL = re.compile(
     r"\b(?:UTC|GMT)\s*[+-]\s*\d{1,2}(?::\d{2})?(?![\d.:])", re.IGNORECASE
@@ -120,6 +152,28 @@ def _extract_title(lines: list[str]) -> str:
     roles = list(
         dict.fromkeys(match.group().strip() for match in ROLE.finditer(header))
     )
+    # Pipe-separated departments can precede a specific title: Sales | Account
+    # Executive describes one role. Preserve standalone labels as a fallback.
+    department_labels = {
+        "sales",
+        "business development",
+        "marketing",
+        "growth",
+        "customer support",
+        "customer success",
+        "talent acquisition",
+        "hr",
+        "human resources",
+        "operations",
+        "finance",
+        "legal",
+        "content",
+    }
+    specific_roles = [
+        role for role in roles if role.casefold() not in department_labels
+    ]
+    if specific_roles:
+        roles = specific_roles
     listed = {
         match.group().casefold()
         for line in lines[1:12]
@@ -131,7 +185,37 @@ def _extract_title(lines: list[str]) -> str:
         or len(listed) > 1
     ):
         return "Multiple roles"
-    return roles[0][:120] if roles else "Job opening"
+    if roles:
+        return roles[0][:120]
+    # Unknown professions can still have a clear pipe-separated title. Ignore
+    # metadata and explicit skill-only labels rather than inventing a profession.
+    skill_labels = {normalize_technology(label) for label in EXPLICIT_SKILL_TERMS}
+    candidates = [*re.split(r"\s*[|—]\s*", lines[0])[1:], *lines[1:2]]
+    for candidate in candidates:
+        candidate = candidate.strip(" -*•")
+        if not candidate or len(candidate) > 120 or len(candidate.split()) > 12:
+            continue
+        if re.match(r"(?:we|our|join|the|please|if|this|at)\b", candidate, re.I):
+            continue
+        if re.search(r"https?://|@|[$€£]|\b(?:UTC|GMT)\b", candidate, re.I):
+            continue
+        if re.fullmatch(
+            r"(?:remote|onsite|on-site|hybrid)(?:\s*\([^)]*\))?", candidate, re.I
+        ):
+            continue
+        if normalize_region(candidate) in {
+            *REGION_MEMBERS,
+            "worldwide",
+            "us_only",
+        } or normalize_country(candidate):
+            continue
+        if (
+            EMPLOYMENT.fullmatch(candidate)
+            or normalize_technology(candidate) in skill_labels
+        ):
+            continue
+        return candidate
+    return "Multiple roles"
 
 
 def _extract_company(header: str) -> str | None:
@@ -213,7 +297,7 @@ def _extract_timezone(text: str) -> str | None:
 def _extract_technologies(text: str) -> list[str]:
     # Reuse the project's vocabulary and aliases; do not turn general words into skills.
     text = re.sub(r"https?://\S+|\S+@\S+", " ", text)
-    vocabulary = {label for label in TECHNICAL_CATEGORIES if " " not in label} - {
+    vocabulary = EXPLICIT_SKILL_TERMS - {
         "backend",
         "devops",
         "database",
@@ -267,11 +351,17 @@ def parse_comment(
     if (
         not company
         and not hiring
-        and not (title != "Job opening" and ("|" in header or "—" in header))
+        and not (
+            (title != "Multiple roles" or ROLE.search(header))
+            and ("|" in header or "—" in header)
+        )
     ):
         return None
-    if title == "Job opening" and not (
-        company and (remote is not None or EMPLOYMENT.search(metadata)) or hiring
+    if title == "Multiple roles" and not (
+        company
+        and (remote is not None or EMPLOYMENT.search(metadata))
+        or hiring
+        or ROLE.search(header)
     ):
         return None
     salary = (
@@ -291,9 +381,7 @@ def parse_comment(
         remote_regions=_extract_regions(metadata, remote),
         employment_type=_extract_one(EMPLOYMENT, metadata),
         experience_level=(
-            _extract_one(EXPERIENCE, title)
-            if title not in {"Multiple roles", "Job opening"}
-            else None
+            _extract_one(EXPERIENCE, title) if title != "Multiple roles" else None
         ),
         technologies=_extract_technologies(text),
         salary_min=salary[0],
@@ -360,7 +448,7 @@ def parse_thread(
         report["remote_known"] += int(remote_known)
         report["multi_role"] += int(job.title == "Multiple roles")
         report["ambiguous"] += int(
-            not remote_known or not job.company or job.title == "Job opening"
+            not remote_known or not job.company or job.title == "Multiple roles"
         )
     report["parsed"] = len(jobs)
     if payload["children"] and malformed == len(payload["children"]):

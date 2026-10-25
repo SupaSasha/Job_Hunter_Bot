@@ -62,19 +62,39 @@ def test_all_static_score_explanations_translated_without_mutation(rule):
 @pytest.mark.parametrize(
     "rule,expected",
     [
-        ("Preferred technology Redis: +4", "Tecnología preferida Redis: +4"),
-        ("Keyword: backend: +3", "Palabra clave: backend: +3"),
-        ("LATAM region: +10", "Región Latinoamérica: +10"),
-        ("Timezone distance: 1 hour(s): +7", "Diferencia horaria: 1 h: +7"),
-        ("Timezone distance: 4 hours: -10", "Diferencia horaria: 4 h: -10"),
-        ("Middle level: +5", "Nivel Intermedio: +5"),
         (
-            "Title seniority: Architect: -15",
-            "Nivel indicado en el título: Arquitecto: -15",
+            "Preferred skills matched (1/2): +10",
+            "Habilidades preferidas coincidentes (1/2): +10",
         ),
         (
-            "Requires 5+ years of experience: -10",
-            "Requiere 5+ años de experiencia: -10",
+            "Required skills matched (1/2): +5",
+            "Habilidades requeridas coincidentes (1/2): +5",
+        ),
+        (
+            "Keywords matched (1/2): +8",
+            "Palabras clave coincidentes (1/2): +8",
+        ),
+        (
+            "Region matches user preferences: +10",
+            "La región coincide con tus preferencias: +10",
+        ),
+        ("Timezone within 1 hour: +7", "Compatibilidad horaria (1 h): +7"),
+        (
+            "Timezone difference: 3 hours: no adjustment",
+            "Diferencia horaria de 3h: sin ajuste",
+        ),
+        (
+            "Inferred experience differs from user preferences: -5",
+            "La experiencia inferida difiere de tus preferencias: -5",
+        ),
+        ("Salary meets user minimum: +5", "El salario alcanza tu mínimo: +5"),
+        (
+            "Employment matches user preferences: +5",
+            "El empleo coincide con tus preferencias: +5",
+        ),
+        (
+            "Remote matches user preference: +5",
+            "Remoto coincide con tu preferencia: +5",
         ),
     ],
 )

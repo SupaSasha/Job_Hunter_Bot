@@ -1,5 +1,7 @@
 # Himalayas collector
 
+> October 25, 2026 update: Structured skills/tags and specific category skill labels are now profession-neutral; broad category and role labels are not skills. See [universal matching report](universal-matching-report.md). Earlier live-run details below are historical.
+
 ## API verification
 
 Implementation verified on October 16, 2026 against the

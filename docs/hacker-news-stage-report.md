@@ -1,5 +1,11 @@
 # Hacker News — Who is hiring?
 
+> October 25, 2026 update: Role recognition now covers deterministic non-tech patterns including customer success, talent acquisition, project management, legal, copywriting and consulting. Unrecognized hiring comments retain a generic title. Non-tech skill text extraction is supported. See [universal matching report](universal-matching-report.md). Earlier live-run details below are historical.
+
+> Historical snapshot verified October 16, 2026. Scoring was subsequently
+> changed to use recipient filters only; statements below about unchanged
+> scoring weights describe the earlier implementation stage.
+
 ## API verification and thread discovery
 
 Verified October 16, 2026 against the [official Algolia HN API reference](https://hn.algolia.com/api),

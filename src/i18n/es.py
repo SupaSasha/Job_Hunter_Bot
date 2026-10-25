@@ -69,7 +69,7 @@ ES = {
     "digest.attempted": "Ya se intentó enviar tu resumen de vacantes de hoy.",
     "digest.empty": "No hay nuevas vacantes que coincidan con tus filtros.",
     "digest.summary": (
-        "🔥 {count} nuevas vacantes compatibles\n\nMejores coincidencias:\n" "{matches}"
+        "🔥 {count} nuevas vacantes compatibles\n\nMejores coincidencias:\n{matches}"
     ),
     "settings.title": "⚙️ Configuración",
     "settings.timezone": "Zona horaria",
@@ -95,8 +95,7 @@ ES = {
     "settings.score_updated": "Puntaje mínimo cambiado a {value}%.",
     "settings.premium_required": "Esta opción requiere Prueba o Premium.",
     "settings.edit_failed": (
-        "No se pudo actualizar el menú. Abrí /settings para revisar tu "
-        "configuración."
+        "No se pudo actualizar el menú. Abrí /settings para revisar tu configuración."
     ),
     "settings.locked_time": (
         "El horario personalizado del resumen está disponible durante la "
@@ -111,19 +110,19 @@ ES = {
     "filters.unavailable": "Los filtros de empleo todavía no están disponibles.",
     "filters.not_available": "Este filtro no está disponible.",
     "filters.edit_failed": (
-        "No se pudo actualizar el menú. Abrí /filters para revisar tus " "filtros."
+        "No se pudo actualizar el menú. Abrí /filters para revisar tus filtros."
     ),
     "filters.any_amount": "Cualquier monto",
     "filters.any_currency": "Cualquier moneda",
     "filters.tolerance": "Tolerancia horaria: ±{hours}h",
     "filters.any_selections": "Sin opciones seleccionadas se acepta cualquiera.",
     "filters.regions_help": (
-        "Elegí las regiones permitidas. Sin regiones seleccionadas se "
-        "excluyen las vacantes con una región indicada."
+        "Elegí las regiones permitidas. Sin regiones seleccionadas se acepta "
+        "cualquier región. Las vacantes globales son compatibles con todas."
     ),
     "filters.source_minimum": "Debe quedar al menos una fuente activada.",
     "filters.salary_screen": (
-        "Salario mínimo\n\nActual:\n{salary}\n\nNo se aplica conversión de " "monedas."
+        "Salario mínimo\n\nActual:\n{salary}\n\nNo se aplica conversión de monedas."
     ),
     "filters.set_amount": "Ingresar monto",
     "filters.currency": "Moneda",
@@ -140,21 +139,21 @@ ES = {
     "input.remove_keywords": (
         "Enviá las palabras clave que querés quitar, separadas por comas."
     ),
-    "input.add_tech": "Enviá una o más tecnologías separadas por comas.",
+    "input.add_tech": "Ingresá habilidades separadas por comas.",
     "input.remove_tech": (
-        "Enviá las tecnologías que querés quitar, separadas por comas."
+        "Enviá las habilidades o etiquetas que querés quitar, separadas por comas."
     ),
     "input.add_words": "Enviá las palabras que querés excluir, separadas por comas.",
     "input.remove_words": (
-        "Enviá las palabras excluidas que querés quitar, separadas por " "comas."
+        "Enviá las palabras excluidas que querés quitar, separadas por comas."
     ),
     "input.add_companies": (
         "Enviá las empresas que querés excluir, separadas por comas."
     ),
     "input.remove_companies": (
-        "Enviá las empresas excluidas que querés quitar, separadas por " "comas."
+        "Enviá las empresas excluidas que querés quitar, separadas por comas."
     ),
-    "input.keywords_example": "\n\nEjemplo:\npython, backend, api",
+    "input.keywords_example": "\n\nEjemplo:\naccountant, sales, designer, python",
     "input.expiry": "\n\nUsá /cancel para cancelar. La entrada vence en 10 minutos.",
     "input.retry": "{error}\n\nIntentá de nuevo o usá /cancel.",
     "error.invalid_list": "Entrada de lista inválida.",
@@ -163,19 +162,19 @@ ES = {
     "error.list_limit": "Usá hasta 50 valores.",
     "error.list_action": "Acción de lista inválida.",
     "error.tech_conflict": (
-        "Primero quitá estas tecnologías de la lista de tecnologías " "excluidas."
+        "Primero quitá estas habilidades de la lista de habilidades excluidas."
     ),
     "error.filter_option": "Opción de filtro inválida.",
     "error.filter_screen": "Pantalla de filtros inválida.",
     "error.salary": (
-        "Enviá un número entero entre 0 y 2147483647, sin símbolos de " "moneda."
+        "Enviá un número entero entre 0 y 2147483647, sin símbolos de moneda."
     ),
     "error.currency": "Moneda inválida.",
     "error.tolerance": "La tolerancia horaria debe estar entre 0 y 4 horas.",
     "error.language": "Idioma inválido.",
     "error.timezone": "Zona horaria inválida",
     "error.digest_time": (
-        "El horario del resumen debe ser una hora local con precisión de " "minutos"
+        "El horario del resumen debe ser una hora local con precisión de minutos"
     ),
     "error.score": "El puntaje mínimo debe ser un número entero entre 0 y 100",
     "job.match": "🔥 Compatibilidad: {score}%",
@@ -190,8 +189,8 @@ ES = {
     "job.region_missing": "Región no especificada",
     "job.employment": "Tipo de empleo",
     "job.employment_missing": "Tipo de empleo no especificado",
-    "job.technologies": "Tecnologías",
-    "job.technologies_missing": "Tecnologías no especificadas",
+    "job.technologies": "Habilidades",
+    "job.technologies_missing": "Habilidades no especificadas",
     "job.experience": "Experiencia",
     "job.source": "Fuente",
     "job.matches": "Coincidencias",
@@ -207,29 +206,37 @@ ES = {
     "feedback.saved": "Guardada.",
     "feedback.rejected": "Marcada como no adecuada.",
     "score.base": "Puntaje base: +50",
-    "score.preferred": "Tecnología preferida {technology}: {points}",
-    "score.keyword": "Palabra clave: {keyword}: +3",
-    "score.region": "Región {region}: {points}",
-    "score.timezone_compatible": "Zona horaria compatible: +10",
-    "score.timezone_distance": "Diferencia horaria: {distance} h: {points}",
-    "score.timezone_far": "Diferencia horaria: 5+ h: -20",
+    "score.preferred": "Habilidades preferidas coincidentes ({matched}): +{points}",
+    "score.required": "Habilidades requeridas coincidentes ({matched}): +{points}",
+    "score.keyword": "Palabras clave coincidentes ({matched}): +{points}",
+    "score.region": "La región coincide con tus preferencias: +{points}",
+    "score.timezone_compatible": "Zona horaria compatible: +{points}",
+    "score.timezone_distance": "Compatibilidad horaria ({distance} h): +{points}",
+    "score.timezone_no_adjustment": "Diferencia horaria de {distance}h: sin ajuste",
+    "score.timezone_far": "La zona horaria difiere por {distance} horas: {points}",
     "score.region_penalty": "Región no especificada: -2",
     "score.region_unknown": "Región remota desconocida",
     "score.timezone_penalty": "Zona horaria no especificada: -2",
     "score.timezone_missing": "Zona horaria no especificada",
+    "score.experience_unknown": "Nivel de experiencia desconocido: -2",
     "score.experience_missing": "Nivel de experiencia no especificado",
-    "score.level": "Nivel {level}: {points}",
-    "score.title_seniority": "Nivel indicado en el título: {level}: {points}",
-    "score.years": "Requiere {years}+ años de experiencia: {points}",
+    "score.experience_match": "La experiencia coincide con tus preferencias: +{points}",
+    "score.experience_mismatch": (
+        "La experiencia inferida difiere de tus preferencias: {points}"
+    ),
     "score.salary_penalty": "Salario no especificado: -2",
     "score.salary_missing": "Salario no especificado",
+    "score.salary_currency_unknown": "Moneda salarial desconocida: -2",
+    "score.salary_currency_missing": "Moneda del salario no especificada",
+    "score.salary_match": "El salario alcanza tu mínimo: +{points}",
+    "score.employment_unknown": "Tipo de empleo desconocido: -2",
     "score.employment_missing": "Tipo de empleo no especificado",
-    "score.full_time": "Tiempo completo: +3",
-    "score.remote": "Remoto: +10",
+    "score.employment_match": "El empleo coincide con tus preferencias: +{points}",
+    "score.remote_match": "Remoto coincide con tu preferencia: +{points}",
     "label.keywords": "Palabras clave",
-    "label.required_technologies": "Tecnologías requeridas",
-    "label.preferred_technologies": "Tecnologías preferidas",
-    "label.excluded_technologies": "Tecnologías excluidas",
+    "label.required_technologies": "Habilidades requeridas",
+    "label.preferred_technologies": "Habilidades preferidas",
+    "label.excluded_technologies": "Habilidades excluidas",
     "label.blacklisted_words": "Palabras excluidas",
     "label.blacklisted_companies": "Empresas excluidas",
     "label.allowed_regions": "Regiones",
@@ -285,9 +292,9 @@ ES = {
     "status.expired": "vencido",
     "status.trial": "prueba",
     "filters.button_keywords": "🔎 Palabras clave",
-    "filters.button_reqtech": "🧰 Tecnologías requeridas",
-    "filters.button_preftech": "⭐ Tecnologías preferidas",
-    "filters.button_extech": "🚫 Tecnologías excluidas",
+    "filters.button_reqtech": "🧰 Habilidades requeridas",
+    "filters.button_preftech": "⭐ Habilidades preferidas",
+    "filters.button_extech": "🚫 Habilidades excluidas",
     "filters.button_regions": "🌎 Regiones",
     "filters.button_employment": "💼 Tipo de empleo",
     "filters.button_experience": "📈 Experiencia",
@@ -297,4 +304,42 @@ ES = {
     "filters.button_tz_tol": "🕐 Tolerancia horaria",
     "filters.button_reset": "Restablecer filtros",
     "filters.minimum_salary": "Salario mínimo",
+    "common.other": "Otra",
+    "filters.countries": "Países específicos",
+    "input.countries": (
+        "Enviá nombres de países o códigos ISO separados por comas.\n"
+        "\n"
+        "Ejemplo:\n"
+        "Uruguay, España, Canada\n"
+        "UY, ES, CA"
+    ),
+    "input.currency": (
+        "Enviá un código de moneda de 3 letras.\n"
+        "\n"
+        "Ejemplos: JPY, CHF, NZD, COP, ARS"
+    ),
+    "input.timezone": (
+        "Enviá una zona horaria IANA.\n"
+        "\n"
+        "Ejemplos:\n"
+        "Europe/Berlin\n"
+        "Asia/Tokyo\n"
+        "America/Mexico_City"
+    ),
+    "input.skills_example": (
+        "\n"
+        "\n"
+        "Ejemplos:\n"
+        "Python, FastAPI\n"
+        "Figma, UX Research\n"
+        "Salesforce, B2B Sales\n"
+        "Excel, Contabilidad"
+    ),
+    "settings.custom_timezone": "Otra zona horaria / Personalizada",
+    "error.country": (
+        "País desconocido. Usá un nombre o código ISO, por ejemplo " "España o ES."
+    ),
+    "label.asia": "Asia",
+    "label.africa": "África",
+    "label.oceania": "Oceanía",
 }

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import re
-
+from src.collectors.text import html_to_text
 from src.schemas.filters import FilterResult, UserFilterDTO
 from src.schemas.job import JobDTO
+from src.services.region_compatibility import regions_compatible
 from src.services.timezones import user_utc_offset
-from src.services.tokens import normalize_technology
+from src.services.tokens import contains_term, normalize_technology
 
 
 class FilterService:
@@ -26,26 +26,13 @@ class FilterService:
             if normalized:
                 allowed.add(normalized)
 
-        if filters.worldwide_allowed:
-            allowed.add("worldwide")
-        if filters.latam_allowed:
-            allowed.add("latam")
-        if filters.south_america_allowed:
-            allowed.add("south_america")
-        if filters.uruguay_allowed:
-            allowed.add("uruguay")
-
         return allowed
 
     _get_user_timezone_offset = staticmethod(user_utc_offset)
 
     @staticmethod
     def _contains_word(haystack: str, term: str) -> bool:
-        normalized = term.strip().lower()
-        if not normalized:
-            return False
-        pattern = rf"(?<![a-z0-9]){re.escape(normalized)}(?![a-z0-9])"
-        return re.search(pattern, haystack, flags=re.IGNORECASE) is not None
+        return contains_term(haystack, term)
 
     @staticmethod
     def _has_intersection(
@@ -98,7 +85,7 @@ class FilterService:
                     reasons.append(f"Missing required technology: {technology}")
 
         if filters.keywords:
-            haystack = f"{job.title or ''} {job.description or ''}".lower()
+            haystack = f"{job.title or ''} {html_to_text(job.description)}"
             matches = [
                 keyword.lower()
                 for keyword in filters.keywords
@@ -108,7 +95,7 @@ class FilterService:
                 reasons.append("No keyword match")
 
         if filters.blacklisted_words:
-            haystack = f"{job.title or ''} {job.description or ''}".lower()
+            haystack = f"{job.title or ''} {html_to_text(job.description)}"
             for word in filters.blacklisted_words:
                 normalized_word = self._normalize_token(word)
                 if normalized_word and self._contains_word(haystack, normalized_word):
@@ -135,7 +122,14 @@ class FilterService:
             if current not in allowed_types:
                 reasons.append(f"Employment type is not allowed: {job.employment_type}")
 
-        if filters.experience_levels and job.experience_level is not None:
+        if filters.experience_levels and job.experience_level in {
+            "junior",
+            "middle",
+            "senior",
+            "lead",
+            "staff",
+            "principal",
+        }:
             allowed_levels = {
                 self._normalize_token(item)
                 for item in filters.experience_levels
@@ -147,7 +141,13 @@ class FilterService:
                     f"Experience level is not allowed: {job.experience_level}"
                 )
 
-        if filters.min_salary is not None:
+        same_currency = (
+            filters.currency is None
+            or job.currency is not None
+            and self._normalize_token(job.currency)
+            == self._normalize_token(filters.currency)
+        )
+        if filters.min_salary is not None and same_currency:
             salary_value = (
                 job.salary_max if job.salary_max is not None else job.salary_min
             )
@@ -170,10 +170,16 @@ class FilterService:
 
         if regions:
             allowed_regions = self._get_allowed_regions(filters)
-            if not any(region in allowed_regions for region in regions):
+            if allowed_regions and not any(
+                regions_compatible(region, allowed_regions) for region in regions
+            ):
                 reasons.append("Region is not allowed")
 
-        user_timezone_offset = self._get_user_timezone_offset(filters.timezone)
+        user_timezone_offset = (
+            self._get_user_timezone_offset(filters.timezone)
+            if filters.timezone is not None
+            else None
+        )
         if user_timezone_offset is not None:
             vacancy_min = job.timezone_min_utc_offset
             vacancy_max = job.timezone_max_utc_offset

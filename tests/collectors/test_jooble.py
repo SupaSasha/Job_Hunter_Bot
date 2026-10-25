@@ -257,17 +257,19 @@ def transport(monkeypatch):
     "missing", ["JOOBLE_API_KEY", "JOOBLE_API_DOMAIN", "JOOBLE_SEARCH_LOCATION"]
 )
 async def test_missing_configuration_fails_before_any_network(
-    transport, monkeypatch, missing
+    transport, monkeypatch, missing, fake_redis
 ):
     factory = transport(lambda request: pytest.fail("No configured request expected"))
     monkeypatch.setattr(settings, missing, None)
     with pytest.raises(CollectorConfigurationError, match=missing):
-        await JoobleCollector().collect()
+        await JoobleCollector(
+            redis=fake_redis,
+        ).collect()
     factory.assert_not_called()
 
 
-async def test_two_broad_queries_dedup_identical_id_123_no_per_user_calls(
-    raw, transport, caplog
+async def test_single_broad_query_dedup_and_no_per_user_calls(
+    raw, transport, caplog, fake_redis
 ):
     calls = []
 
@@ -276,14 +278,14 @@ async def test_two_broad_queries_dedup_identical_id_123_no_per_user_calls(
         return httpx.Response(200, json=page([raw]))
 
     factory = transport(respond)
-    collector = JoobleCollector(timeout=7)
+    collector = JoobleCollector(redis=fake_redis, timeout=7)
     with caplog.at_level(logging.DEBUG):
         jobs = await collector.collect()
     assert len(jobs) == 1 and jobs[0].external_id == "123"
     assert (
-        len(calls) == 2
+        len(calls) == 1
         and tuple(json.loads(r.content)["keywords"] for r in calls)
-        == JOOBLE_SEARCH_QUERIES
+        == JOOBLE_SEARCH_QUERIES[:1]
     )
     for request in calls:
         assert request.method == "POST" and request.url.host == "uk.jooble.org"
@@ -300,12 +302,12 @@ async def test_two_broad_queries_dedup_identical_id_123_no_per_user_calls(
         }
         assert "Authorization" not in request.headers and not request.url.query
         assert request.headers["Content-Type"] == "application/json"
-    assert collector.query_job_ids == {"software": ["123"], "developer": ["123"]}
+    assert collector.query_job_ids == {"engineering": ["123"]}
     assert (
-        collector.last_report["api_results_received"] == 2
+        collector.last_report["api_results_received"] == 1
         and collector.last_report["unique_jobs"] == 1
     )
-    assert [q["contributed"] for q in collector.last_report["queries"]] == [1, 0]
+    assert [q["contributed"] for q in collector.last_report["queries"]] == [1]
     assert "test-private-key" not in caplog.text and "/api/<redacted>" in caplog.text
     assert settings.JOOBLE_API_KEY not in repr(settings)
     assert (
@@ -314,7 +316,7 @@ async def test_two_broad_queries_dedup_identical_id_123_no_per_user_calls(
     )
 
 
-async def test_small_bounded_round_robin_pagination(raw, transport):
+async def test_single_broad_query_bounded_pagination(raw, transport, fake_redis):
     calls = []
 
     def respond(request):
@@ -325,14 +327,18 @@ async def test_small_bounded_round_robin_pagination(raw, transport):
         )
 
     transport(respond)
-    jobs = await JoobleCollector(max_pages=3, max_jobs=200).collect()
-    assert len(jobs) == 120 and len(calls) == 6
+    jobs = await JoobleCollector(redis=fake_redis, max_pages=3, max_jobs=200).collect()
+    assert len(jobs) == 60 and len(calls) == 3
     assert [(call["keywords"], call["page"]) for call in calls] == [
-        (q, p) for p in (1, 2, 3) for q in JOOBLE_SEARCH_QUERIES
+        ("engineering", 1),
+        ("design", 1),
+        ("engineering", 2),
     ]
 
 
-async def test_per_run_cap_even_if_provider_ignores_page_size(raw, transport):
+async def test_per_run_cap_even_if_provider_ignores_page_size(
+    raw, transport, fake_redis
+):
     calls = []
 
     def respond(request):
@@ -342,12 +348,14 @@ async def test_per_run_cap_even_if_provider_ignores_page_size(raw, transport):
         )
 
     transport(respond)
-    jobs = await JoobleCollector(max_pages=3, max_jobs=7).collect()
+    jobs = await JoobleCollector(redis=fake_redis, max_pages=3, max_jobs=7).collect()
     assert len(jobs) == 7 and len(calls) == 1
 
 
 @pytest.mark.parametrize("mode", ["empty", "short", "total", "repeated"])
-async def test_pagination_stops_per_query_at_end_or_no_progress(raw, transport, mode):
+async def test_pagination_stops_per_query_at_end_or_no_progress(
+    raw, transport, mode, fake_redis
+):
     calls = []
 
     def respond(request):
@@ -361,24 +369,30 @@ async def test_pagination_stops_per_query_at_end_or_no_progress(raw, transport, 
         )
 
     transport(respond)
-    await JoobleCollector(max_pages=3, max_jobs=200).collect()
-    assert len(calls) == (4 if mode == "repeated" else 2)
+    await JoobleCollector(redis=fake_redis, max_pages=3, max_jobs=200).collect()
+    assert len(calls) == (3 if mode == "repeated" else 2)
 
 
 @pytest.mark.parametrize("status", [400, 401, 403, 404, 500, 503])
-async def test_http_failures_do_not_expose_path_key_or_body(transport, status):
+async def test_http_failures_do_not_expose_path_key_or_body(
+    transport, status, fake_redis
+):
     transport(
         lambda request: httpx.Response(status, text="private body test-private-key")
     )
     with pytest.raises(CollectionError) as caught:
-        await JoobleCollector().collect()
+        await JoobleCollector(
+            redis=fake_redis,
+        ).collect()
     assert "private" not in str(caught.value)
     if status in {401, 403}:
         assert "JOOBLE_API_KEY" in str(caught.value) and "domain" in str(caught.value)
 
 
 @pytest.mark.parametrize("header", ["3600", "Wed, 16 Oct 2099 12:00:00 GMT", "invalid"])
-async def test_retry_after_deferred_without_immediate_retry(transport, header):
+async def test_retry_after_deferred_without_immediate_retry(
+    transport, header, fake_redis
+):
     calls = []
 
     def respond(request):
@@ -387,23 +401,27 @@ async def test_retry_after_deferred_without_immediate_retry(transport, header):
 
     transport(respond)
     with pytest.raises(CollectionError) as caught:
-        await JoobleCollector().collect()
+        await JoobleCollector(
+            redis=fake_redis,
+        ).collect()
     assert len(calls) == 1 and (caught.value.retry_at is None) == (header == "invalid")
 
 
 @pytest.mark.parametrize("error_type", [httpx.ReadTimeout, httpx.ConnectError])
-async def test_network_error_path_sanitized(transport, error_type):
+async def test_network_error_path_sanitized(transport, error_type, fake_redis):
     def respond(request):
         raise error_type(str(request.url), request=request)
 
     transport(respond)
     with pytest.raises(CollectionError) as caught:
-        await JoobleCollector().collect()
+        await JoobleCollector(
+            redis=fake_redis,
+        ).collect()
     assert "test-private-key" not in str(caught.value)
 
 
 @pytest.mark.parametrize("compressed", [False, True])
-async def test_decompressed_size_limit(transport, monkeypatch, compressed):
+async def test_decompressed_size_limit(transport, monkeypatch, compressed, fake_redis):
     content = b"x" * 500
     transport(
         lambda request: httpx.Response(
@@ -414,13 +432,17 @@ async def test_decompressed_size_limit(transport, monkeypatch, compressed):
     )
     monkeypatch.setattr(JoobleCollector, "max_response_bytes", 100)
     with pytest.raises(CollectionError, match="size limit"):
-        await JoobleCollector().collect()
+        await JoobleCollector(
+            redis=fake_redis,
+        ).collect()
 
 
-async def test_invalid_json(transport):
+async def test_invalid_json(transport, fake_redis):
     transport(lambda request: httpx.Response(200, content=b"private-not-json"))
     with pytest.raises(CollectionError, match="invalid JSON"):
-        await JoobleCollector().collect()
+        await JoobleCollector(
+            redis=fake_redis,
+        ).collect()
 
 
 @pytest.mark.parametrize(
@@ -513,3 +535,115 @@ def test_shared_source_filters_attribution_and_source_neutral_score(raw, languag
         for row in markup["inline_keyboard"]
         for button in row
     )
+
+
+async def test_broad_collection_accepts_nontech_roles_in_one_request(
+    raw, transport, fake_redis
+):
+    titles = ["Sales Manager", "Accountant", "Designer", "Customer Support"]
+    calls = []
+
+    def respond(request):
+        calls.append(request)
+        body = json.loads(request.content)
+        assert body["keywords"] == "engineering"
+        return httpx.Response(
+            200,
+            json=page(
+                [
+                    dict(
+                        raw,
+                        id=800 + i,
+                        title=title,
+                        link=f"https://uk.jooble.org/jdp/{800+i}",
+                    )
+                    for i, title in enumerate(titles)
+                ]
+            ),
+        )
+
+    transport(respond)
+    jobs = await JoobleCollector(
+        redis=fake_redis,
+    ).collect()
+    assert [job.title for job in jobs] == titles
+    assert len(calls) == 1
+
+
+async def test_profession_queries_rotate_persist_and_wrap(raw, transport, fake_redis):
+    calls = []
+
+    def respond(request):
+        calls.append(json.loads(request.content)["keywords"])
+        return httpx.Response(200, json=page([raw]))
+
+    transport(respond)
+    for _ in range(len(JOOBLE_SEARCH_QUERIES) + 2):
+        collector = JoobleCollector(redis=fake_redis)
+        await collector.collect()
+        assert collector.last_report["queries_executed"] == 1
+    assert calls == [*JOOBLE_SEARCH_QUERIES, *JOOBLE_SEARCH_QUERIES[:2]]
+    assert int(await fake_redis.get(collector.rotation_key)) == len(calls)
+
+
+@pytest.mark.parametrize("budget", [1, 2, 3])
+async def test_rotation_keeps_existing_total_request_budget(
+    raw, transport, fake_redis, budget
+):
+    calls = []
+
+    def respond(request):
+        calls.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json=page([dict(raw, id=1000 * len(calls) + i) for i in range(20)], 100000),
+        )
+
+    transport(respond)
+    collector = JoobleCollector(redis=fake_redis, max_pages=budget, max_jobs=200)
+    await collector.collect()
+    assert len(calls) == budget  # Same as the previous single jobs query × pages.
+    assert len({call["keywords"] for call in calls}) == min(2, budget)
+    assert await fake_redis.get(collector.rotation_key) == min(2, budget)
+
+
+async def test_rotation_does_not_skip_unstarted_queries_after_job_cap(
+    raw, transport, fake_redis
+):
+    queries = []
+
+    def respond(request):
+        queries.append(json.loads(request.content)["keywords"])
+        return httpx.Response(
+            200, json=page([dict(raw, id=i) for i in range(20)], 1000)
+        )
+
+    transport(respond)
+    for _ in range(2):
+        await JoobleCollector(redis=fake_redis, max_pages=3, max_jobs=1).collect()
+    assert queries == list(JOOBLE_SEARCH_QUERIES[:2])
+
+
+async def test_failed_request_consumes_one_rotation_slot(raw, transport, fake_redis):
+    queries = []
+
+    def respond(request):
+        queries.append(json.loads(request.content)["keywords"])
+        return (
+            httpx.Response(403)
+            if len(queries) == 1
+            else httpx.Response(200, json=page([raw]))
+        )
+
+    transport(respond)
+    with pytest.raises(CollectionError):
+        await JoobleCollector(redis=fake_redis).collect()
+    await JoobleCollector(redis=fake_redis).collect()
+    assert queries == list(JOOBLE_SEARCH_QUERIES[:2])
+
+
+async def test_rotation_state_is_required_before_fetch(transport):
+    factory = transport(lambda request: pytest.fail("No Redis state, no API request"))
+    with pytest.raises(CollectorConfigurationError, match="Redis"):
+        await JoobleCollector().collect()
+    factory.assert_not_called()
