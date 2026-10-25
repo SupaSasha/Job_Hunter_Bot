@@ -55,6 +55,27 @@ def test_filter_service_accepts_matching_remote_job() -> None:
     assert result.reasons == []
 
 
+def test_filter_service_uses_word_boundaries_for_keywords_and_blacklist() -> None:
+    service = FilterService()
+    job = build_job(
+        title="JavaScript Engineer",
+        description="We maintain internal tooling and AI workflows.",
+        company="Acme",
+    )
+
+    unsupported = UserFilterDTO(keywords=["java"])
+    unsupported_result = service.evaluate(job, unsupported)
+    assert unsupported_result.accepted is False
+    assert any("No keyword match" in reason for reason in unsupported_result.reasons)
+
+    filtered = UserFilterDTO(keywords=["ai"], blacklisted_words=["maintain"])
+    result = service.evaluate(job, filtered)
+
+    assert result.accepted is False
+    assert not any("No keyword match" in reason for reason in result.reasons)
+    assert any("Blacklisted word: maintain" in reason for reason in result.reasons)
+
+
 def test_filter_service_rejects_non_remote_and_excluded_and_required_technology() -> (
     None
 ):

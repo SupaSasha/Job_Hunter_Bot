@@ -124,10 +124,10 @@ class TelegramClient:
                         retry_after = value
                 except (ValueError, AttributeError):
                     pass
+            retryable = response.status_code == 429 or 500 <= response.status_code < 600
             raise TelegramAPIError(
                 f"Telegram HTTP error: {response.status_code}",
-                retryable=400 <= response.status_code < 500
-                and response.status_code != 408,
+                retryable=retryable,
                 retry_after=retry_after,
             )
         try:
@@ -145,9 +145,10 @@ class TelegramClient:
             )
             if type(retry_after) is not int or retry_after < 0:
                 retry_after = None
+            retryable = type(code) is int and (code == 429 or 500 <= code < 600)
             raise TelegramAPIError(
                 f"Telegram API rejected {method}{suffix}",
-                retryable=type(code) is int and 400 <= code < 500 and code != 408,
+                retryable=retryable,
                 retry_after=retry_after if code == 429 else None,
             )
         if body.get("ok") is not True or "result" not in body:

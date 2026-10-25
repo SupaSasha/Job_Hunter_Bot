@@ -16,7 +16,6 @@ from src.models.user_filter import (
 from src.repositories.notification_settings import NotificationSettingsRepository
 from src.repositories.user_filters import UserFilterRepository
 from src.schemas.filters import UserFilterDTO
-from src.services.default_filters import default_user_filters
 from src.services.tokens import normalize_technology
 
 REGIONS = (
@@ -137,10 +136,6 @@ class UserFilterService:
             row = await self.repository.get_by_user_id(user_id)
             if row is None:
                 values = filter_defaults()
-                if user.telegram_id == self.owner_telegram_id:
-                    legacy = default_user_filters()
-                    values["required_technologies"] = legacy.required_technologies
-                    values["preferred_technologies"] = legacy.preferred_technologies
                 row = await self.repository.add(
                     UserFilterORM(user_id=user_id, **values)
                 )

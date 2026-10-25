@@ -28,9 +28,17 @@ class DeduplicationService:
 
     @classmethod
     def calculate_fingerprint(cls, job: JobDTO) -> str:
-        # Structured encoding avoids ambiguity at the company/title boundary.
         payload = json.dumps(
-            [cls._canonicalize(job.company), cls._canonicalize(job.title)],
+            [
+                cls._canonicalize(job.company),
+                cls._canonicalize(job.title),
+                cls._canonicalize(job.location),
+                sorted(
+                    cls._canonicalize(region)
+                    for region in (job.remote_regions or [])
+                    if cls._canonicalize(region)
+                ),
+            ],
             ensure_ascii=False,
             separators=(",", ":"),
         )

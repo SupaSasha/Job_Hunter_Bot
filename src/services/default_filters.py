@@ -2,10 +2,8 @@ from src.schemas.filters import UserFilterDTO
 
 
 def default_user_filters(timezone: str = "America/Montevideo") -> UserFilterDTO:
-    """Legacy owner profile, used only when bootstrapping missing saved filters."""
+    """Neutral default filters for first-time users without saved preferences."""
     return UserFilterDTO(
-        required_technologies=["python"],
-        preferred_technologies=["fastapi", "postgresql", "redis", "celery", "docker"],
         remote_only=True,
         worldwide_allowed=True,
         latam_allowed=True,

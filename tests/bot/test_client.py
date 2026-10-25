@@ -296,9 +296,9 @@ async def test_delivery_certainty_for_transport_failures(error, retryable):
     "http_status,code,retryable",
     [
         (429, 429, True),
-        (400, 400, True),
-        (403, 403, True),
-        (500, 500, False),
+        (400, 400, False),
+        (403, 403, False),
+        (500, 500, True),
         (200, 429, True),
     ],
 )

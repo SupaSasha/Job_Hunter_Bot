@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from src.schemas.filters import FilterResult, UserFilterDTO
 from src.schemas.job import JobDTO
 from src.services.timezones import user_utc_offset
@@ -36,6 +38,14 @@ class FilterService:
         return allowed
 
     _get_user_timezone_offset = staticmethod(user_utc_offset)
+
+    @staticmethod
+    def _contains_word(haystack: str, term: str) -> bool:
+        normalized = term.strip().lower()
+        if not normalized:
+            return False
+        pattern = rf"(?<![a-z0-9]){re.escape(normalized)}(?![a-z0-9])"
+        return re.search(pattern, haystack, flags=re.IGNORECASE) is not None
 
     @staticmethod
     def _has_intersection(
@@ -92,7 +102,7 @@ class FilterService:
             matches = [
                 keyword.lower()
                 for keyword in filters.keywords
-                if keyword and keyword.lower() in haystack
+                if keyword and self._contains_word(haystack, keyword)
             ]
             if not matches:
                 reasons.append("No keyword match")
@@ -101,7 +111,7 @@ class FilterService:
             haystack = f"{job.title or ''} {job.description or ''}".lower()
             for word in filters.blacklisted_words:
                 normalized_word = self._normalize_token(word)
-                if normalized_word and normalized_word in haystack:
+                if normalized_word and self._contains_word(haystack, normalized_word):
                     reasons.append(f"Blacklisted word: {word}")
 
         if filters.blacklisted_companies:

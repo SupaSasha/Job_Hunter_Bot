@@ -77,6 +77,19 @@ def test_fingerprint_separates_company_from_title() -> None:
     )
 
 
+def test_fingerprint_includes_location_and_region_context() -> None:
+    assert DeduplicationService.calculate_fingerprint(
+        build_job(location="Montevideo, Uruguay", remote_regions=["latam"])
+    ) != DeduplicationService.calculate_fingerprint(
+        build_job(location="Sao Paulo, Brazil", remote_regions=["latam"])
+    )
+    assert DeduplicationService.calculate_fingerprint(
+        build_job(location="Remote", remote_regions=["latam"])
+    ) != DeduplicationService.calculate_fingerprint(
+        build_job(location="Remote", remote_regions=["worldwide"])
+    )
+
+
 def test_fingerprint_does_not_depend_on_source_or_url() -> None:
     assert DeduplicationService.calculate_fingerprint(
         build_job()

@@ -201,7 +201,8 @@ class ScoringService:
             normalized_keyword = cls._normalize_text(keyword)
             if not normalized_keyword:
                 continue
-            if normalized_keyword in haystack:
+            pattern = rf"(?<![a-z0-9]){re.escape(normalized_keyword)}(?![a-z0-9])"
+            if re.search(pattern, haystack):
                 matched_keywords.append(normalized_keyword)
 
         unique_keywords = []
