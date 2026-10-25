@@ -1,9 +1,15 @@
+from src.models.user_filter import DEFAULT_REGIONS, DEFAULT_SOURCES
 from src.schemas.filters import UserFilterDTO
 
 
 def default_user_filters(timezone: str = "America/Montevideo") -> UserFilterDTO:
-    """Neutral default filters for first-time users without saved preferences."""
+    """Legacy owner defaults kept for the primary user bootstrap."""
     return UserFilterDTO(
+        keywords=["python"],
+        required_technologies=["python"],
+        preferred_technologies=["fastapi", "postgresql", "redis", "celery", "docker"],
+        allowed_regions=list(DEFAULT_REGIONS),
+        sources=list(DEFAULT_SOURCES),
         remote_only=True,
         worldwide_allowed=True,
         latam_allowed=True,

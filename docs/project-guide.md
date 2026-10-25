@@ -892,8 +892,9 @@ poetry run pytest tests/integration
 
 The fixture creates a unique schema, runs actual Alembic migrations, and drops
 only that schema on completion. Without the variable these tests are skipped.
-GitHub Actions supplies PostgreSQL 16 and runs both suites. Live broker/worker
-and Telegram delivery remain separate manual checks.
+Automated GitHub Actions CI is intentionally disabled. Tests and lint checks
+are run locally. Live broker/worker and Telegram delivery remain separate
+manual checks.
 
 Review fixes and migration `49f75b591334` are described in
 [the hardening report](hardening-review-report.md). Run `poetry run alembic upgrade head` before starting the updated services. No historical data rewrite

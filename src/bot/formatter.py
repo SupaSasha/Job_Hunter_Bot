@@ -1,7 +1,6 @@
 from urllib.parse import urlsplit
 
 from src.i18n import DEFAULT_LANGUAGE, Language, display_label, t
-from src.i18n.scoring import format_score_rule
 from src.schemas.job import JobDTO
 from src.schemas.scoring import ScoreResult
 from src.services.collector_policy import source_display_name
@@ -74,18 +73,6 @@ def format_job_message(
         f"{t('job.experience', language)}: {experience}\n"
         f"{t('job.source', language)}: {source_display_name(job.source)}",
     ]
-    for key, items, icon in (
-        ("job.matches", score.matched_rules, "✅"),
-        ("job.penalties", score.penalties, "⚠️"),
-        ("job.warnings", score.warnings, "⚠️"),
-    ):
-        entries = [format_score_rule(item, language) for item in items if item.strip()]
-        if entries:
-            sections.append(
-                t(key, language)
-                + ":\n"
-                + "\n".join(f"{icon} {value}" for value in entries)
-            )
     return _truncate("\n\n".join(sections), 4096)
 
 

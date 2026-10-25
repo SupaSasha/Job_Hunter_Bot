@@ -16,6 +16,7 @@ from src.models.user_filter import (
 from src.repositories.notification_settings import NotificationSettingsRepository
 from src.repositories.user_filters import UserFilterRepository
 from src.schemas.filters import UserFilterDTO
+from src.services.default_filters import default_user_filters
 from src.services.tokens import normalize_technology
 
 REGIONS = (
@@ -133,15 +134,36 @@ class UserFilterService:
             )
             if user is None or not user.is_active:
                 raise FiltersUnavailable
+            preferences = await self.preferences.get_by_user_id(user_id)
             row = await self.repository.get_by_user_id(user_id)
             if row is None:
                 values = filter_defaults()
+                if (
+                    self.owner_telegram_id is not None
+                    and user.telegram_id == self.owner_telegram_id
+                ):
+                    legacy = default_user_filters(
+                        preferences.timezone
+                        if preferences
+                        else settings.SCHEDULER_TIMEZONE
+                    )
+                    values.update(
+                        {
+                            "keywords": legacy.keywords,
+                            "required_technologies": legacy.required_technologies,
+                            "preferred_technologies": legacy.preferred_technologies,
+                            "allowed_regions": legacy.allowed_regions,
+                            "sources": legacy.sources,
+                            "remote_only": legacy.remote_only,
+                            "exclude_us_only": legacy.exclude_us_only,
+                            "timezone_tolerance_hours": legacy.timezone_tolerance_hours,
+                        }
+                    )
                 row = await self.repository.add(
                     UserFilterORM(user_id=user_id, **values)
                 )
             if change is not None:
                 change(row)
-            preferences = await self.preferences.get_by_user_id(user_id)
             dto = filters_to_dto(
                 row,
                 preferences.timezone if preferences else settings.SCHEDULER_TIMEZONE,

@@ -25,7 +25,9 @@ def job() -> JobDTO:
     )
 
 
-def test_formatter_includes_fields_and_explanations(job: JobDTO) -> None:
+def test_formatter_includes_compact_score_and_omits_detailed_breakdown(
+    job: JobDTO,
+) -> None:
     score = ScoreResult(
         score=87,
         matched_rules=["Python: +10", "Remote: +10"],
@@ -46,14 +48,20 @@ def test_formatter_includes_fields_and_explanations(job: JobDTO) -> None:
         "Docker",
         "Experience: Middle",
         "Source: Remote OK",
+    ):
+        assert value in message
+    for forbidden in (
         "Matches:",
         "✅ Python: +10",
         "Penalties:",
         "⚠️ Senior level: -5",
         "Warnings:",
         "⚠️ Timezone is not specified",
+        "Base score",
+        "+10",
+        "-5",
     ):
-        assert value in message
+        assert forbidden not in message
 
 
 def test_unknown_salary_and_empty_sections(job: JobDTO) -> None:
@@ -62,6 +70,7 @@ def test_unknown_salary_and_empty_sections(job: JobDTO) -> None:
     assert "Salary not specified" in message
     for heading in ("Matches:", "Penalties:", "Warnings:"):
         assert heading not in message
+    assert "70%" in message
 
 
 @pytest.mark.parametrize(
@@ -81,11 +90,9 @@ def test_partial_salary(
 
 def test_long_unicode_message_fits_telegram(job: JobDTO) -> None:
     job.title = "🐍" * 10000
-    message = format_job_message(
-        job, ScoreResult(score=70, matched_rules=["🐍" * 5000])
-    )
+    message = format_job_message(job, ScoreResult(score=70))
     assert len(message.encode("utf-16-le")) // 2 <= 4096
-    assert message.endswith("…")
+    assert message.endswith("Source: Remote OK")
 
 
 def test_keyboard_uses_small_callbacks_and_url() -> None:
