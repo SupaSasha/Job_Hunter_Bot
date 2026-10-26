@@ -77,7 +77,9 @@ def test_filter_service_rejects_non_remote_and_excluded_and_required_technology(
     None
 ):
     service = FilterService()
-    job = build_job(remote=False, technologies=["python", "php"])
+    job = build_job(
+        remote=False, technologies=["python", "php"], description="Python and PHP"
+    )
     filters = UserFilterDTO(
         remote_only=True,
         required_technologies=["python", "postgresql"],

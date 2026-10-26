@@ -217,6 +217,12 @@ class UserFilterService:
 
         def change(row):
             current = getattr(row, field)
+            if field == "allowed_regions" and value not in current:
+                current = (
+                    []
+                    if value == "worldwide"
+                    else [item for item in current if item != "worldwide"]
+                )
             updated = (
                 [item for item in current if item != value]
                 if value in current
@@ -275,7 +281,7 @@ class UserFilterService:
         def change(row):
             current = row.allowed_regions
             if action == "add":
-                updated = list(current)
+                updated = [value for value in current if value != "worldwide"]
                 seen = {normalize_country(value) or value for value in current}
                 for value in values:
                     if value not in seen:

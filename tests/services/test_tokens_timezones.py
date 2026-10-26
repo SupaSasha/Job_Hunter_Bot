@@ -36,6 +36,7 @@ def test_filter_and_preference_do_not_match_different_c_languages(required, acce
         title="Developer",
         url="https://example.com",
         technologies=["C++"],
+        description="C++ development",
     )
     filters = UserFilterDTO(
         required_technologies=[required],
@@ -80,7 +81,7 @@ def test_fractional_distance_does_not_fall_into_largest_penalty(monkeypatch):
             penalties,
             warnings,
         )
-        == 7
+        == 10
     )
     assert not penalties
 

@@ -4,8 +4,9 @@ from src.collectors.text import html_to_text
 from src.schemas.filters import FilterResult, UserFilterDTO
 from src.schemas.job import JobDTO
 from src.services.region_compatibility import regions_compatible
+from src.services.salary import monthly_salary
 from src.services.timezones import user_utc_offset
-from src.services.tokens import contains_term, normalize_technology
+from src.services.tokens import contains_term, matches_skill, normalize_technology
 
 
 class FilterService:
@@ -45,6 +46,7 @@ class FilterService:
 
     def evaluate(self, job: JobDTO, filters: UserFilterDTO) -> FilterResult:
         reasons: list[str] = []
+        skill_text = f"{job.title or ''} {html_to_text(job.description)}"
 
         if filters.sources:
             allowed_sources = {
@@ -64,10 +66,9 @@ class FilterService:
                 for item in filters.excluded_technologies
                 if normalize_technology(item)
             }
-            for technology in job.technologies:
-                normalized = normalize_technology(technology)
-                if normalized in excluded:
-                    reasons.append(f"Excluded technology: {normalized}")
+            for technology in sorted(excluded):
+                if matches_skill(technology, job.technologies, skill_text):
+                    reasons.append(f"Excluded technology: {technology}")
 
         if filters.required_technologies:
             required = {
@@ -75,13 +76,8 @@ class FilterService:
                 for item in filters.required_technologies
                 if normalize_technology(item)
             }
-            job_technologies = {
-                normalize_technology(item)
-                for item in job.technologies
-                if normalize_technology(item)
-            }
             for technology in sorted(required):
-                if technology not in job_technologies:
+                if not matches_skill(technology, job.technologies, skill_text):
                     reasons.append(f"Missing required technology: {technology}")
 
         if filters.keywords:
@@ -148,8 +144,9 @@ class FilterService:
             == self._normalize_token(filters.currency)
         )
         if filters.min_salary is not None and same_currency:
-            salary_value = (
-                job.salary_max if job.salary_max is not None else job.salary_min
+            salary_value = monthly_salary(
+                job.salary_max if job.salary_max is not None else job.salary_min,
+                job.salary_period,
             )
             if salary_value is not None and salary_value < filters.min_salary:
                 reasons.append("Salary is below minimum")

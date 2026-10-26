@@ -122,7 +122,8 @@ ES = {
     ),
     "filters.source_minimum": "Debe quedar al menos una fuente activada.",
     "filters.salary_screen": (
-        "Salario mínimo\n\nActual:\n{salary}\n\nNo se aplica conversión de monedas."
+        "Salario mínimo mensual\n\nActual:\n{salary}\n\n"
+        "No se aplica conversión de monedas."
     ),
     "filters.set_amount": "Ingresar monto",
     "filters.currency": "Moneda",
@@ -134,7 +135,10 @@ ES = {
     "filters.reset": "Restablecer filtros",
     "filters.reset_confirm": "¿Restablecer todos los filtros?",
     "filters.reset_yes": "Sí, restablecer",
-    "input.salary": "Enviá un número entero sin símbolos de moneda.\n\nEjemplo:\n2500",
+    "input.salary": (
+        "Enviá el monto mensual como un número entero sin símbolos de moneda."
+        "\n\nEjemplo:\n2500"
+    ),
     "input.add_keywords": "Enviá las palabras clave separadas por comas.",
     "input.remove_keywords": (
         "Enviá las palabras clave que querés quitar, separadas por comas."
@@ -303,7 +307,7 @@ ES = {
     "filters.button_blacklist": "🚫 Lista de exclusión",
     "filters.button_tz_tol": "🕐 Tolerancia horaria",
     "filters.button_reset": "Restablecer filtros",
-    "filters.minimum_salary": "Salario mínimo",
+    "filters.minimum_salary": "Salario mínimo mensual",
     "common.other": "Otra",
     "filters.countries": "Países específicos",
     "input.countries": (

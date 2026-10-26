@@ -221,7 +221,7 @@ def test_profession_neutral_profiles_can_reach_same_match_score(title, keyword, 
         timezone=None,
     )
 
-    assert ScoringService().calculate(job, filters).score == 95
+    assert ScoringService().calculate(job, filters).score == 100
 
 
 def test_remote_bonus_requires_remote_user_preference() -> None:
@@ -243,7 +243,8 @@ def test_remote_bonus_requires_remote_user_preference() -> None:
     no_remote_preference = service.calculate(
         job, UserFilterDTO(remote_only=False, timezone=None, allowed_regions=[])
     )
-    assert remote_preference.score == no_remote_preference.score + 5
+    assert remote_preference.score > no_remote_preference.score
+    assert "Remote matches user preference: +5" in remote_preference.matched_rules
 
 
 def test_required_skills_get_proportional_completeness_bonus() -> None:
@@ -261,10 +262,13 @@ def test_required_skills_get_proportional_completeness_bonus() -> None:
         timezone_max_utc_offset=None,
     )
     filters = UserFilterDTO(
-        required_technologies=["excel", "salesforce"], timezone=None, allowed_regions=[]
+        required_technologies=["excel", "salesforce"],
+        timezone=None,
+        allowed_regions=[],
+        remote_only=False,
     )
     result = ScoringService().calculate(job, filters)
-    assert result.score == 55
+    assert result.score == 75
     assert "Required skills matched (1/2): +5" in result.matched_rules
 
 
@@ -280,6 +284,7 @@ def test_salary_and_employment_only_score_when_user_configures_them() -> None:
         employment_type="contract",
         salary_min=6000,
         salary_max=8000,
+        salary_period="monthly",
         currency="USD",
         timezone_min_utc_offset=None,
         timezone_max_utc_offset=None,
@@ -291,12 +296,13 @@ def test_salary_and_employment_only_score_when_user_configures_them() -> None:
             min_salary=5000,
             currency="USD",
             employment_types=["contract"],
+            remote_only=False,
             timezone=None,
             allowed_regions=[],
         ),
     )
     assert empty.score == 50
-    assert configured.score == 60
+    assert configured.score == 100
     assert "Employment matches user preferences: +5" in configured.matched_rules
     assert "Salary meets user minimum: +5" in configured.matched_rules
 
@@ -383,10 +389,8 @@ def test_scoring_handles_timezone_exact_distance_and_unknown_timezone() -> None:
         build_job(timezone_min_utc_offset=0, timezone_max_utc_offset=0),
         UserFilterDTO(timezone="America/Montevideo"),
     )
-    assert any(
-        "Timezone difference: 3 hours: no adjustment" in entry
-        for entry in distance.matched_rules
-    )
+    assert not any("Timezone compatible" in entry for entry in distance.matched_rules)
+    assert not any("Timezone differs" in entry for entry in distance.penalties)
 
     unknown = service.calculate(
         build_job(timezone_min_utc_offset=None, timezone_max_utc_offset=None),

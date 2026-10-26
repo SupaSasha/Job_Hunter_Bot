@@ -114,7 +114,8 @@ EN = {
     ),
     "filters.source_minimum": "At least one source must be enabled.",
     "filters.salary_screen": (
-        "Minimum salary\n\nCurrent:\n{salary}\n\nNo currency conversion is applied."
+        "Minimum monthly salary\n\nCurrent:\n{salary}\n\n"
+        "No currency conversion is applied."
     ),
     "filters.set_amount": "Set amount",
     "filters.currency": "Currency",
@@ -126,7 +127,10 @@ EN = {
     "filters.reset": "Reset filters",
     "filters.reset_confirm": "Reset all job filters to defaults?",
     "filters.reset_yes": "Yes, reset",
-    "input.salary": "Send a whole number without currency symbols.\n\nExample:\n2500",
+    "input.salary": (
+        "Send the monthly amount as a whole number without currency symbols."
+        "\n\nExample:\n2500"
+    ),
     "input.add_keywords": "Send keywords separated by commas.",
     "input.remove_keywords": "Send keywords to remove separated by commas.",
     "input.add_tech": "Enter skills separated by commas.",
@@ -285,7 +289,7 @@ EN = {
     "filters.button_blacklist": "🚫 Blacklist",
     "filters.button_tz_tol": "🕐 Timezone tolerance",
     "filters.button_reset": "Reset filters",
-    "filters.minimum_salary": "Minimum salary",
+    "filters.minimum_salary": "Minimum monthly salary",
     "common.other": "Other",
     "filters.countries": "Specific countries",
     "input.countries": (

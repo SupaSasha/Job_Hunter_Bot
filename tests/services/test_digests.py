@@ -33,7 +33,9 @@ def test_selection_real_filters_scoring_threshold_order_and_cap():
         update={"technologies": ["python", "fastapi", "docker", "postgresql"]}
     )
     low = job(2)
-    rejected = job(3).model_copy(update={"technologies": ["java"]})
+    rejected = job(3).model_copy(
+        update={"title": "Java developer", "technologies": ["java"]}
+    )
     items = [(2, low), (3, rejected), (1, high)]
     filters = default_user_filters().model_copy(
         update={
@@ -321,7 +323,9 @@ async def test_digest_persists_pipeline_and_delivery_metrics(setup, monkeypatch)
     monkeypatch.setattr(
         "src.services.digests.UserFilterService", lambda session: filters
     )
-    rejected = job(3).model_copy(update={"technologies": ["java"]})
+    rejected = job(3).model_copy(
+        update={"title": "Java developer", "technologies": ["java"]}
+    )
     service.repository.items.append((3, rejected))
     notify.side_effect = [
         NotificationResult(sent=True, skipped=False),

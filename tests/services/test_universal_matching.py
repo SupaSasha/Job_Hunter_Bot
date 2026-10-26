@@ -63,7 +63,7 @@ def test_multiword_and_unicode_skills_match_description(skill):
     result = ScoringService().calculate(
         job(description=f"Experience with {skill} required"), filters
     )
-    assert result.score == 75
+    assert result.score == 100
 
 
 @pytest.mark.parametrize(
@@ -158,8 +158,8 @@ def test_employment_types_are_not_mapped_to_full_time(employment):
 
 def test_currency_preferences_never_convert_or_score_other_currencies():
     filters = UserFilterDTO(currency="JPY", min_salary=100000)
-    matching = job(currency="JPY", salary_min=200000)
-    different = job(currency="USD", salary_min=200000)
+    matching = job(currency="JPY", salary_min=200000, salary_period="monthly")
+    different = job(currency="USD", salary_min=200000, salary_period="monthly")
     assert FilterService().evaluate(matching, filters).accepted
     assert not FilterService().evaluate(different, filters).accepted
     assert (
@@ -178,7 +178,9 @@ def test_salary_minimum_never_compares_different_currencies():
     )
     assert (
         not FilterService()
-        .evaluate(job(currency="JPY", salary_min=1000), filters)
+        .evaluate(
+            job(currency="JPY", salary_min=1000, salary_period="monthly"), filters
+        )
         .accepted
     )
 

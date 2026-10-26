@@ -1,4 +1,5 @@
 import re
+from collections.abc import Iterable
 
 SKILL_NOISE = {"communication", "team player", "motivated", "responsible"}
 
@@ -50,3 +51,22 @@ def contains_term(text: str, term: str) -> bool:
     term = " ".join(term.casefold().split())
     text = " ".join(text.casefold().split())
     return bool(term and re.search(r"(?<!\w)" + re.escape(term) + r"(?!\w)", text))
+
+
+def matches_skill(skill: str, tags: Iterable[str], text: str) -> bool:
+    """Use the same aliases and word boundaries for every skill preference."""
+    canonical = normalize_technology(skill)
+    if not canonical:
+        return False
+    if any(normalize_technology(tag) == canonical for tag in tags):
+        return True
+    spellings = {
+        canonical,
+        *(alias for alias, target in TECHNOLOGY_ALIASES.items() if target == canonical),
+    }
+    text = " ".join(text.casefold().split())
+    return any(
+        re.search(r"(?<![\w+#])" + re.escape(spelling) + r"(?![\w+#])", text)
+        is not None
+        for spelling in spellings
+    )

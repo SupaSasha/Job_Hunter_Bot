@@ -7,8 +7,9 @@ from src.schemas.filters import UserFilterDTO
 from src.schemas.job import JobDTO
 from src.schemas.scoring import ScoreResult
 from src.services.region_compatibility import regions_compatible
+from src.services.salary import monthly_salary
 from src.services.timezones import user_utc_offset
-from src.services.tokens import contains_term, normalize_technology
+from src.services.tokens import contains_term, matches_skill, normalize_technology
 
 BASE_SCORE = 50
 KEYWORD_WEIGHT = 15
@@ -103,12 +104,7 @@ class ScoringService:
         )
 
         def matches(item: str) -> bool:
-            canonical = normalize_technology(item)
-            if canonical is None:
-                return False
-            if canonical in skills:
-                return True
-            return contains_term(haystack, canonical)
+            return matches_skill(item, skills, haystack)
 
         preferred = list(
             dict.fromkeys(
@@ -137,7 +133,7 @@ class ScoringService:
                 if (canonical := normalize_technology(item))
             )
         )
-        required_matches = [item for item in required if item in skills]
+        required_matches = [item for item in required if matches(item)]
         required_score = (
             round(REQUIRED_SKILL_WEIGHT * len(required_matches) / len(required))
             if required
@@ -231,47 +227,23 @@ class ScoringService:
         vacancy_min = job.timezone_min_utc_offset
         vacancy_max = job.timezone_max_utc_offset
 
-        if vacancy_min is None and vacancy_max is None:
+        if user_offset is None:
+            return 0
+
+        if vacancy_min is None or vacancy_max is None:
             cls._append_unique(penalties, "Timezone is not specified: -2")
             cls._append_unique(warnings, "Timezone is not specified")
             return -2
 
-        if user_offset is None:
-            return 0
-
-        if vacancy_min is not None and vacancy_max is not None:
-            if vacancy_min <= user_offset <= vacancy_max:
-                cls._append_unique(
-                    matched_rules, f"Timezone compatible: +{TIMEZONE_WEIGHT}"
-                )
-                return TIMEZONE_WEIGHT
-
-            distance = min(
-                abs(user_offset - vacancy_min),
-                abs(user_offset - vacancy_max),
-            )
-            if distance <= 1:
-                cls._append_unique(matched_rules, "Timezone within 1 hour: +7")
-                return 7
-            if distance <= 2:
-                cls._append_unique(matched_rules, "Timezone within 2 hours: +4")
-                return 4
-            if distance <= 3:
-                cls._append_unique(
-                    matched_rules,
-                    f"Timezone difference: {distance:g} hours: no adjustment",
-                )
-                return 0
-            if distance <= 4:
-                cls._append_unique(
-                    penalties, f"Timezone differs by {distance:g} hours: -5"
-                )
-                return -5
+        tolerance = filters.timezone_tolerance_hours
+        if max(user_offset - tolerance, vacancy_min) <= min(
+            user_offset + tolerance, vacancy_max
+        ):
             cls._append_unique(
-                penalties, f"Timezone differs by {distance:g}+ hours: -10"
+                matched_rules, f"Timezone compatible: +{TIMEZONE_WEIGHT}"
             )
-            return -10
-
+            return TIMEZONE_WEIGHT
+        # The hard filter already rejects known incompatible intervals.
         return 0
 
     @classmethod
@@ -337,7 +309,7 @@ class ScoringService:
                 return -2
             if job.currency.casefold() != filters.currency.casefold():
                 return 0
-        salary_value = job.salary_min
+        salary_value = monthly_salary(job.salary_min, job.salary_period)
         if filters.min_salary is None or (
             salary_value is not None and salary_value >= filters.min_salary
         ):
@@ -380,22 +352,93 @@ class ScoringService:
         penalties: list[str] = []
         warnings: list[str] = []
 
-        score = BASE_SCORE
-        score += self._score_skill_preferences(job, filters, matched_rules)
-        score += self._score_keywords(job, filters, matched_rules)
+        components = [
+            self._score_skill_preferences(job, filters, matched_rules),
+            self._score_keywords(job, filters, matched_rules),
+        ]
         if filters.remote_only and job.remote:
             self._append_unique(
                 matched_rules, f"Remote matches user preference: +{REMOTE_WEIGHT}"
             )
-            score += REMOTE_WEIGHT
-        score += self._score_region(job, filters, matched_rules, warnings, penalties)
-        score += self._score_timezone(job, filters, matched_rules, penalties, warnings)
-        score += self._score_experience(
-            job, filters, matched_rules, penalties, warnings
+            components.append(REMOTE_WEIGHT)
+        components.extend(
+            [
+                self._score_region(job, filters, matched_rules, warnings, penalties),
+                self._score_timezone(job, filters, matched_rules, penalties, warnings),
+                self._score_experience(
+                    job, filters, matched_rules, penalties, warnings
+                ),
+                self._score_salary(job, filters, matched_rules, penalties, warnings),
+                self._score_employment_type(
+                    job, filters, matched_rules, penalties, warnings
+                ),
+            ]
         )
-        score += self._score_salary(job, filters, matched_rules, penalties, warnings)
-        score += self._score_employment_type(
-            job, filters, matched_rules, penalties, warnings
+
+        # Calibrate against configured, assessable preferences instead of an
+        # unreachable fixed total. Keep missing-metadata deductions absolute.
+        experience_known = (
+            job.experience_level
+            in {"junior", "middle", "senior", "lead", "staff", "principal"}
+            or self._infer_experience_level_from_title(job.title) is not None
+        )
+        salary_known = (
+            (job.salary_min is not None or job.salary_max is not None)
+            and (not filters.currency or bool(job.currency))
+            and (
+                filters.min_salary is None
+                or monthly_salary(job.salary_min, job.salary_period) is not None
+            )
+        )
+        capacity = sum(
+            weight
+            for weight, active in (
+                (KEYWORD_WEIGHT, any(item.strip() for item in filters.keywords)),
+                (
+                    REQUIRED_SKILL_WEIGHT,
+                    any(
+                        normalize_technology(item)
+                        for item in filters.required_technologies
+                    ),
+                ),
+                (
+                    PREFERRED_SKILL_WEIGHT,
+                    any(
+                        normalize_technology(item)
+                        for item in filters.preferred_technologies
+                    ),
+                ),
+                (REMOTE_WEIGHT, filters.remote_only),
+                (REGION_WEIGHT, bool(filters.allowed_regions and job.remote_regions)),
+                (
+                    TIMEZONE_WEIGHT,
+                    filters.timezone is not None
+                    and self._get_user_timezone_offset(filters.timezone) is not None
+                    and job.timezone_min_utc_offset is not None
+                    and job.timezone_max_utc_offset is not None,
+                ),
+                (
+                    EXPERIENCE_WEIGHT,
+                    bool(filters.experience_levels) and experience_known,
+                ),
+                (
+                    SALARY_WEIGHT,
+                    (filters.min_salary is not None or filters.currency is not None)
+                    and salary_known,
+                ),
+                (
+                    EMPLOYMENT_WEIGHT,
+                    bool(filters.employment_types) and job.employment_type is not None,
+                ),
+            )
+            if active
+        )
+        earned = sum(max(component, 0) for component in components)
+        deductions = sum(min(component, 0) for component in components)
+        score = (
+            BASE_SCORE
+            + (round((100 - BASE_SCORE) * earned / capacity) if capacity else 0)
+            + deductions
         )
 
         if score < 0:

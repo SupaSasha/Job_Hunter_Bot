@@ -152,6 +152,8 @@ async def test_excluding_removes_required_and_preferred(service):
     [(field, value) for field, values in TOGGLE_LISTS.items() for value in values],
 )
 async def test_toggle_lists(service, field, value):
+    if field == "allowed_regions":
+        service.repository.get_by_user_id.return_value.allowed_regions = []
     before = getattr(await service.get_filters(7), field)
     after = getattr(await service.toggle(7, field, value), field)
     assert (value in after) != (value in before)
@@ -376,3 +378,37 @@ async def test_skill_edits_respect_saved_compact_aliases(
     assert excluded.preferred_technologies == ["figma"]
     with pytest.raises(ValueError):
         await service.update_list(7, "required_technologies", "add", "uxresearch")
+
+
+async def test_selecting_specific_region_removes_worldwide(service):
+    filters = await service.toggle(7, "allowed_regions", "europe")
+    assert filters.allowed_regions == ["europe"]
+    job = JobDTO(
+        source="remoteok",
+        external_id="latam",
+        title="Accountant",
+        url="https://example.com/latam",
+        remote=True,
+        remote_regions=["latam"],
+    )
+    assert not FilterService().evaluate(job, filters).accepted
+    assert (
+        await service.toggle(7, "allowed_regions", "worldwide")
+    ).allowed_regions == ["worldwide"]
+
+
+async def test_selecting_country_removes_worldwide(service):
+    filters = await service.update_countries(7, "add", "Spain")
+    assert filters.allowed_regions == ["spain"]
+    job = JobDTO(
+        source="remoteok",
+        external_id="uy",
+        title="Accountant",
+        url="https://example.com/uy",
+        remote=True,
+        remote_regions=["uruguay"],
+    )
+    assert not FilterService().evaluate(job, filters).accepted
+    assert (
+        await service.toggle(7, "allowed_regions", "worldwide")
+    ).allowed_regions == ["worldwide"]
