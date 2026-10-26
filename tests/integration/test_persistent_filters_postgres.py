@@ -90,7 +90,7 @@ async def test_migration_preserves_existing_rows_and_matches_metadata(pg):
         assert "timezone" not in Base.metadata.tables["user_filters"].columns
 
 
-async def test_saved_preferences_change_scoring_without_changing_weights(pg):
+async def test_saved_preferences_affect_matching_with_normalized_scores(pg):
     a, _ = await seed(pg)
     job = JobDTO(
         source="remoteok",
@@ -107,10 +107,16 @@ async def test_saved_preferences_change_scoring_without_changing_weights(pg):
         await service.update_list(a, "preferred_technologies", "add", "redis")
         await service.update_list(a, "keywords", "add", "backend")
     async with pg() as session:
-        after = ScoringService().calculate(
-            job, await UserFilterService(session).get_filters(a)
+        saved = await UserFilterService(session).get_filters(a)
+        after = ScoringService().calculate(job, saved)
+        unmatched = ScoringService().calculate(
+            job.model_copy(update={"title": "Unrelated vacancy", "technologies": []}),
+            saved,
         )
-        assert after.score == before + 35
+        # Both profiles match every assessable preference. New preferences add
+        # capacity as well as points; they must not push a full match above 100.
+        assert after.score == before == 98
+        assert unmatched.score < before
         assert "Preferred skills matched (1/1): +20" in after.matched_rules
         assert "Keywords matched (1/1): +15" in after.matched_rules
 
@@ -411,7 +417,6 @@ async def test_local_telegram_scenario_persists_after_polling_restart(pg, fake_r
         "Full-time",
         "Contract",
         "USD 2500",
-        "Worldwide",
         "Latin America",
         "South America",
         "Uruguay",
@@ -419,6 +424,7 @@ async def test_local_telegram_scenario_persists_after_polling_restart(pg, fake_r
         "Get on Board",
     ):
         assert value in summary
+    assert "Worldwide" not in summary
     async with pg() as session:
         saved = await UserFilterService(session).get_filters(a)
         assert saved.required_technologies == saved.keywords == ["python"]
@@ -427,6 +433,7 @@ async def test_local_telegram_scenario_persists_after_polling_restart(pg, fake_r
         assert saved.timezone_tolerance_hours == 2
         assert saved.employment_types == ["full_time", "contract"]
         assert saved.experience_levels == ["junior", "middle"]
+        assert saved.allowed_regions == ["latam", "south_america", "uruguay"]
         assert saved.min_salary == 2500 and saved.currency == "USD"
         session.add(
             job_to_orm(

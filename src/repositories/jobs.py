@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.job import JobORM
@@ -36,3 +36,22 @@ class JobRepository:
         self.session.add(job)
         await self.session.flush()
         return job
+
+    async def add_source(self, job_id: int, source: str) -> None:
+        # Append in SQL so concurrent discoveries cannot overwrite each other.
+        await self.session.execute(
+            update(JobORM)
+            .where(
+                JobORM.id == job_id,
+                JobORM.source != source,
+                ~JobORM.additional_sources.any(source),
+            )
+            .values(
+                additional_sources=func.array_append(JobORM.additional_sources, source)
+            )
+        )
+
+    async def update_details(self, job_id: int, values: dict) -> None:
+        await self.session.execute(
+            update(JobORM).where(JobORM.id == job_id).values(**values)
+        )

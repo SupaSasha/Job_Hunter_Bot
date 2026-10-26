@@ -10,7 +10,7 @@ from src.schemas.job import JobDTO
 from src.services.deduplication import DeduplicationService
 
 
-def job_to_orm(job: JobDTO, fingerprint: str) -> JobORM:
+def _job_values(job: JobDTO) -> dict:
     data = job.model_dump()
     for field in ("published_at", "collected_at"):
         value = data[field]
@@ -18,7 +18,11 @@ def job_to_orm(job: JobDTO, fingerprint: str) -> JobORM:
             if value.utcoffset() is None:
                 raise ValueError(f"{field} must be timezone-aware")
             data[field] = value.astimezone(timezone.utc)
-    return JobORM(**data, fingerprint=fingerprint)
+    return data
+
+
+def job_to_orm(job: JobDTO, fingerprint: str) -> JobORM:
+    return JobORM(**_job_values(job), fingerprint=fingerprint)
 
 
 class JobSaveService:
@@ -33,6 +37,15 @@ class JobSaveService:
         self.repository = JobRepository(session)
         self.deduplication = DeduplicationService(self.repository)
 
+    async def _refresh_existing(self, job_id: int, job: JobDTO) -> None:
+        values = _job_values(job)
+        # Preserve identity, first collection time and cross-source discoveries.
+        for field in ("source", "external_id", "collected_at", "additional_sources"):
+            values.pop(field)
+        values["fingerprint"] = self.deduplication.calculate_fingerprint(job)
+        await self.repository.update_details(job_id, values)
+        await self.session.commit()
+
     async def save_if_new(self, job: JobDTO) -> JobSaveResult:
         try:
             duplicate = await self.deduplication.check(job)
@@ -43,7 +56,13 @@ class JobSaveService:
                     reason=duplicate.reason,
                     cross_source_duplicate=duplicate.cross_source_duplicate,
                 )
-                await self.session.rollback()
+                if duplicate.reason == "source_external_id":
+                    await self._refresh_existing(result.job_id, job)
+                elif duplicate.cross_source_duplicate:
+                    await self.repository.add_source(result.job_id, job.source)
+                    await self.session.commit()
+                else:
+                    await self.session.rollback()
                 return result
 
             persisted = await self.repository.add(
@@ -67,13 +86,16 @@ class JobSaveService:
                 )
                 if existing is None:
                     raise exc
+                existing_id = existing.id
+                await self._refresh_existing(existing_id, job)
                 return JobSaveResult(
                     status="duplicate",
-                    job_id=existing.id,
+                    job_id=existing_id,
                     reason="source_external_id",
                 )
-            finally:
+            except Exception:
                 await self.session.rollback()
+                raise
         except Exception:
             await self.session.rollback()
             raise

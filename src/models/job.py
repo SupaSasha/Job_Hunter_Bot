@@ -17,6 +17,9 @@ class JobORM(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     source: Mapped[str] = mapped_column(String)
+    additional_sources: Mapped[list[str]] = mapped_column(
+        ARRAY(String), default=list, server_default=text("'{}'::varchar[]")
+    )
     external_id: Mapped[str] = mapped_column(String)
     title: Mapped[str] = mapped_column(String)
     company: Mapped[str | None] = mapped_column(String)

@@ -17,7 +17,7 @@ ssh "${ssh_options[@]}" "$deploy_target" "test -f '$deploy_path/.env'" || {
     echo 'Initialize the server .env securely before deploying; it is never copied by this script.' >&2
     exit 1
 }
-ssh "${ssh_options[@]}" "$deploy_target" "mkdir -p '$backup_root'"
+ssh "${ssh_options[@]}" "$deploy_target" "install -d -m 700 '$backup_root'"
 ssh "${ssh_options[@]}" "$deploy_target" "test -d '$backup_root'" || {
     echo 'Backup directory is unavailable' >&2
     exit 1
@@ -29,11 +29,13 @@ rsync --archive --compress \
 
 ssh "${ssh_options[@]}" "$deploy_target" "bash -s -- '$deploy_path' '$backup_root'" <<'REMOTE'
 set -euo pipefail
+umask 077
 cd -- "$1"
 backup_root="$2"
 compose=(docker compose -f docker-compose.production.yml)
 "${compose[@]}" config --quiet
 "${compose[@]}" exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' </dev/null > "$backup_root/db-backup-$(date -u +%Y%m%dT%H%M%SZ).sql"
+find "$backup_root" -maxdepth 1 -type f -name 'db-backup-*.sql' -exec chmod 600 {} +
 find "$backup_root" -maxdepth 1 -type f -name 'db-backup-*.sql' -mtime +7 -delete
 "${compose[@]}" build api
 "${compose[@]}" up -d --wait postgres redis

@@ -6,6 +6,19 @@ from src.schemas.job import JobDTO
 from src.services.regions import normalize_region
 from src.services.tokens import SKILL_NOISE, normalize_technology
 
+COMPARABLE_EXPERIENCE_LEVELS = frozenset(
+    {"junior", "middle", "senior", "lead", "staff", "principal"}
+)
+
+
+def split_job_values(value: str | None) -> set[str]:
+    # Strip underscores left after commas by the previous normalizer, too.
+    return {
+        item
+        for part in (value or "").split(",")
+        if (item := part.strip(" _").casefold())
+    }
+
 
 class NormalizationService:
     """Normalize job data into a stable project-wide canonical form."""
@@ -121,32 +134,27 @@ class NormalizationService:
         return normalized
 
     @classmethod
+    def _normalize_job_values(
+        cls, value: str | None, aliases: dict[str, str | None]
+    ) -> str | None:
+        normalized = []
+        for part in (value or "").split(","):
+            item = cls._collapse_spaces(part.strip(" _"))
+            if not item:
+                continue
+            lowered = item.lower()
+            canonical = aliases.get(lowered, lowered.replace(" ", "_"))
+            if canonical and canonical not in normalized:
+                normalized.append(canonical)
+        return ", ".join(normalized) or None
+
+    @classmethod
     def _normalize_employment_type(cls, employment_type: str | None) -> str | None:
-        if employment_type is None:
-            return None
-
-        value = cls._collapse_spaces(employment_type)
-        if value is None:
-            return None
-
-        lowered = value.lower()
-        if lowered in cls.EMPLOYMENT_TYPE_ALIASES:
-            return cls.EMPLOYMENT_TYPE_ALIASES[lowered]
-        if " or " in lowered or " and " in lowered:
-            return lowered.replace(" ", "_")
-        return lowered.replace(" ", "_")
+        return cls._normalize_job_values(employment_type, cls.EMPLOYMENT_TYPE_ALIASES)
 
     @classmethod
     def _normalize_experience_level(cls, experience_level: str | None) -> str | None:
-        if experience_level is None:
-            return None
-
-        value = cls._collapse_spaces(experience_level)
-        if value is None:
-            return None
-
-        lowered = value.lower()
-        return cls.EXPERIENCE_LEVEL_ALIASES.get(lowered, lowered.replace(" ", "_"))
+        return cls._normalize_job_values(experience_level, cls.EXPERIENCE_LEVEL_ALIASES)
 
     @staticmethod
     def _normalize_location(value: str | None) -> str | None:

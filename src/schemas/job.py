@@ -9,6 +9,7 @@ class JobDTO(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     source: str
+    additional_sources: list[str] = Field(default_factory=list)
     external_id: str
     title: str
     company: str | None = None

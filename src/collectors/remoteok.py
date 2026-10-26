@@ -140,9 +140,9 @@ class RemoteOKCollector(BaseJobCollector):
         location = raw_job.get("location")
         if isinstance(location, str):
             location = location.strip() or None
-        remote_value = bool(raw_job.get("remote", False))
-        if not location and remote_value is False:
-            remote_value = True
+        # The remote-jobs feed normally omits this flag, including jobs with a
+        # location. Keep an explicit rejection, but default missing flags to remote.
+        remote_value = bool(raw_job.get("remote", True))
 
         remote_regions: list[str] = []
         if remote_value and location:

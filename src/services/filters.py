@@ -3,7 +3,9 @@ from __future__ import annotations
 from src.collectors.text import html_to_text
 from src.schemas.filters import FilterResult, UserFilterDTO
 from src.schemas.job import JobDTO
+from src.services.normalization import COMPARABLE_EXPERIENCE_LEVELS, split_job_values
 from src.services.region_compatibility import regions_compatible
+from src.services.regions import region_members
 from src.services.salary import monthly_salary
 from src.services.timezones import user_utc_offset
 from src.services.tokens import contains_term, matches_skill, normalize_technology
@@ -54,7 +56,11 @@ class FilterService:
                 for item in filters.sources
                 if self._normalize_token(item)
             }
-            if self._normalize_token(job.source) not in allowed_sources:
+            job_sources = {
+                self._normalize_token(source)
+                for source in (job.source, *job.additional_sources)
+            }
+            if not job_sources.intersection(allowed_sources):
                 reasons.append(f"Source is not allowed: {job.source}")
 
         if filters.remote_only and not job.remote:
@@ -114,25 +120,18 @@ class FilterService:
                 for item in filters.employment_types
                 if self._normalize_token(item)
             }
-            current = self._normalize_token(job.employment_type)
-            if current not in allowed_types:
+            current = split_job_values(job.employment_type)
+            if not current.intersection(allowed_types):
                 reasons.append(f"Employment type is not allowed: {job.employment_type}")
 
-        if filters.experience_levels and job.experience_level in {
-            "junior",
-            "middle",
-            "senior",
-            "lead",
-            "staff",
-            "principal",
-        }:
+        levels = split_job_values(job.experience_level) & COMPARABLE_EXPERIENCE_LEVELS
+        if filters.experience_levels and levels:
             allowed_levels = {
                 self._normalize_token(item)
                 for item in filters.experience_levels
                 if self._normalize_token(item)
             }
-            current = self._normalize_token(job.experience_level)
-            if current not in allowed_levels:
+            if not levels.intersection(allowed_levels):
                 reasons.append(
                     f"Experience level is not allowed: {job.experience_level}"
                 )
@@ -162,7 +161,11 @@ class FilterService:
             for value in job.remote_regions
             if self._normalize_token(value)
         ]
-        if filters.exclude_us_only and "us_only" in regions:
+        if (
+            filters.exclude_us_only
+            and regions
+            and all(region_members(region) == {"US"} for region in regions)
+        ):
             reasons.append("US-only vacancy")
 
         if regions:

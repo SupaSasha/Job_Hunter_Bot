@@ -89,8 +89,8 @@ async def test_duplicate_does_not_insert(service: JobSaveService, job: JobDTO) -
         "source_external_id",
     )
     service.repository.add.assert_not_awaited()
-    service.session.commit.assert_not_awaited()
-    service.session.rollback.assert_awaited_once()
+    service.session.commit.assert_awaited_once()
+    service.session.rollback.assert_not_awaited()
 
 
 @pytest.mark.parametrize("boundary", ["add", "commit"])
@@ -99,14 +99,14 @@ async def test_concurrent_identity_conflict(
 ) -> None:
     service.repository.get_by_source_external_id.side_effect = [None, JobORM(id=9)]
     target = service.repository.add if boundary == "add" else service.session.commit
-    target.side_effect = make_integrity_error()
+    target.side_effect = [make_integrity_error(), None]
     result = await service.save_if_new(job)
     assert (result.status, result.job_id, result.reason) == (
         "duplicate",
         9,
         "source_external_id",
     )
-    assert service.session.rollback.await_count == 2
+    assert service.session.rollback.await_count == 1
 
 
 @pytest.mark.parametrize(

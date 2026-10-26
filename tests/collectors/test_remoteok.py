@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import pytest
+
 from src.collectors.remoteok import RemoteOKCollector
+from src.schemas.filters import UserFilterDTO
+from src.services.filters import FilterService
+from src.services.normalization import NormalizationService
 
 
 def test_remoteok_map_job_parses_expected_fields() -> None:
@@ -61,6 +66,23 @@ def test_remoteok_map_job_handles_missing_optionals() -> None:
     assert dto.salary_max is None
     assert dto.technologies == ["qa", "automation"]
     assert dto.published_at == datetime(2026, 9, 22, 8, 0, tzinfo=timezone.utc)
+
+
+@pytest.mark.parametrize("location", [None, "Remote", "Berlin", "Brazil"])
+def test_missing_remote_flag_passes_default_remote_filter(location):
+    job = NormalizationService().normalize(
+        RemoteOKCollector.map_job(
+            {
+                "id": "remote-without-flag",
+                "position": "Accountant",
+                "url": "https://remoteok.com/remote-jobs/accountant",
+                "location": location,
+            }
+        )
+    )
+
+    assert job.remote is True
+    assert FilterService().evaluate(job, UserFilterDTO()).accepted
 
 
 def test_naive_iso_is_utc_independent_of_host_timezone(monkeypatch):

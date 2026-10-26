@@ -6,6 +6,7 @@ from src.collectors.text import html_to_text
 from src.schemas.filters import UserFilterDTO
 from src.schemas.job import JobDTO
 from src.schemas.scoring import ScoreResult
+from src.services.normalization import COMPARABLE_EXPERIENCE_LEVELS, split_job_values
 from src.services.region_compatibility import regions_compatible
 from src.services.salary import monthly_salary
 from src.services.timezones import user_utc_offset
@@ -262,19 +263,16 @@ class ScoringService:
         }
         if not preferred:
             return 0
-        comparable = {"junior", "middle", "senior", "lead", "staff", "principal"}
-        explicit = cls._normalize_token(job.experience_level)
-        inferred_level = explicit not in comparable
-        level = (
-            explicit
-            if explicit in comparable
-            else cls._infer_experience_level_from_title(job.title)
-        )
-        if level is None:
+        levels = split_job_values(job.experience_level) & COMPARABLE_EXPERIENCE_LEVELS
+        inferred_level = not levels
+        if not levels:
+            inferred = cls._infer_experience_level_from_title(job.title)
+            levels = {inferred} if inferred else set()
+        if not levels:
             cls._append_unique(penalties, "Experience level is unknown: -2")
             cls._append_unique(warnings, "Experience level is not specified")
             return -2
-        if level in preferred:
+        if levels & preferred:
             cls._append_unique(
                 matched_rules,
                 f"Experience matches user preferences: +{EXPERIENCE_WEIGHT}",
@@ -335,7 +333,7 @@ class ScoringService:
             cls._append_unique(penalties, "Employment type is unknown: -2")
             cls._append_unique(warnings, "Employment type is not specified")
             return -2
-        if job.employment_type.casefold() in preferred:
+        if split_job_values(job.employment_type) & preferred:
             cls._append_unique(
                 matched_rules,
                 f"Employment matches user preferences: +{EMPLOYMENT_WEIGHT}",
@@ -378,8 +376,7 @@ class ScoringService:
         # Calibrate against configured, assessable preferences instead of an
         # unreachable fixed total. Keep missing-metadata deductions absolute.
         experience_known = (
-            job.experience_level
-            in {"junior", "middle", "senior", "lead", "staff", "principal"}
+            bool(split_job_values(job.experience_level) & COMPARABLE_EXPERIENCE_LEVELS)
             or self._infer_experience_level_from_title(job.title) is not None
         )
         salary_known = (
